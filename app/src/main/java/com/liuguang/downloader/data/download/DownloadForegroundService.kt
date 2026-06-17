@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.liuguang.downloader.MainActivity
@@ -274,7 +273,6 @@ class DownloadForegroundService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -322,11 +320,7 @@ class DownloadForegroundService : Service() {
                 putExtra(EXTRA_DOWNLOAD_THREAD_COUNT, downloadThreadCount)
                 customDirectoryUri?.let { putExtra(EXTRA_DIRECTORY_URI, it.toString()) }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startForegroundService(intent)
         }
 
         fun cancel(context: Context) {

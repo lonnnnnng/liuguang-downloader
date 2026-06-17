@@ -128,7 +128,7 @@ class Mp4Muxer {
                 val minNextPts = lastPts + MIN_SAMPLE_STEP_US
                 if (adjustedPts < minNextPts) adjustedPts = minNextPts
 
-                bufferInfo.set(0, sampleSize, adjustedPts, extractor.sampleFlags)
+                bufferInfo.set(0, sampleSize, adjustedPts, extractor.sampleFlags.toCodecBufferFlags())
                 muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
                 lastPtsByMuxerTrack[muxerTrack] = adjustedPts
                 segmentMaxPts = max(segmentMaxPts, adjustedPts)
@@ -148,6 +148,18 @@ class Mp4Muxer {
     private enum class TrackType {
         Video,
         Audio
+    }
+
+    private fun Int.toCodecBufferFlags(): Int {
+        var flags = 0
+        // long: MediaExtractor 和 MediaCodec 的 flag 数值不完全一致，写入 muxer 前只保留 MP4 样本边界需要的标记。
+        if (this and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+            flags = flags or MediaCodec.BUFFER_FLAG_KEY_FRAME
+        }
+        if (this and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME != 0) {
+            flags = flags or MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+        }
+        return flags
     }
 
     private companion object {

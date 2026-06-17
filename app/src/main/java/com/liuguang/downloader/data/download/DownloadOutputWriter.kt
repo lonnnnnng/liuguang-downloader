@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 
@@ -39,6 +40,7 @@ class DownloadOutputWriter(
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun publishToDownloadsWithMediaStore(tempFile: File, displayName: String): PublishedOutput {
         val resolver = context.contentResolver
         val values = ContentValues().apply {

@@ -6,11 +6,11 @@ on:
       version_name:
         description: "Version name, for example 1.0.1"
         required: true
-        default: "1.0.1"
+        default: "1.0.2"
       version_code:
         description: "Android versionCode"
         required: true
-        default: "101"
+        default: "102"
       prerelease:
         description: "Mark GitHub Release as prerelease"
         required: true

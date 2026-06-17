@@ -174,10 +174,6 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(fileName = "")
     }
 
-    fun cancelRunningDownload() {
-        DownloadForegroundService.cancel(getApplication())
-    }
-
     fun startTask(task: DownloadTaskUi) {
         if (task.state == DownloadTaskState.Running || task.state == DownloadTaskState.Queued) return
         startDownloadForTask(task = task, reuseTaskId = true)
