@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
+import android.provider.DocumentsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.liuguang.downloader.data.download.DownloadForegroundService
@@ -41,15 +42,18 @@ data class DownloadTaskUi(
     val finishedAtMillis: Long? = null
 )
 
-private const val DEFAULT_DIRECTORY_LABEL = "默认：系统 Downloads/liuguang-download"
+private const val DEFAULT_DIRECTORY_LABEL = "liuguang-download"
+private const val LEGACY_CUSTOM_DIRECTORY_LABEL = "自定义目录已选择"
+private const val DEFAULT_MAX_PARALLEL_TASKS = 3
+private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 8
 
 data class DownloaderUiState(
     val url: String = "",
     val fileName: String = "",
     val customDirectoryUri: String? = null,
     val customDirectoryLabel: String = DEFAULT_DIRECTORY_LABEL,
-    val maxParallelTasks: Int = 1,
-    val downloadThreadCount: Int = 3,
+    val maxParallelTasks: Int = DEFAULT_MAX_PARALLEL_TASKS,
+    val downloadThreadCount: Int = DEFAULT_DOWNLOAD_THREAD_COUNT,
     val storageUsedLabel: String = "",
     val storageTotalLabel: String = "",
     val storageAvailableLabel: String = "",
@@ -58,15 +62,20 @@ data class DownloaderUiState(
 
 class DownloaderViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("downloader", Context.MODE_PRIVATE)
+    private val savedCustomDirectoryUri = preferences.getString(KEY_CUSTOM_DIRECTORY_URI, null)
 
     private val _uiState = MutableStateFlow(
         DownloaderUiState(
             url = readClipboardM3u8Candidate(application.applicationContext).orEmpty(),
-            customDirectoryUri = preferences.getString(KEY_CUSTOM_DIRECTORY_URI, null),
-            customDirectoryLabel = preferences.getString(KEY_CUSTOM_DIRECTORY_LABEL, null)
-                ?: DEFAULT_DIRECTORY_LABEL,
-            maxParallelTasks = preferences.getInt(KEY_MAX_PARALLEL_TASKS, 1).coerceAtLeast(1),
-            downloadThreadCount = preferences.getInt(KEY_DOWNLOAD_THREAD_COUNT, 3).coerceAtLeast(1)
+            customDirectoryUri = savedCustomDirectoryUri,
+            customDirectoryLabel = resolveDirectoryLabel(
+                savedCustomDirectoryUri,
+                preferences.getString(KEY_CUSTOM_DIRECTORY_LABEL, null)
+            ),
+            maxParallelTasks = preferences.getInt(KEY_MAX_PARALLEL_TASKS, DEFAULT_MAX_PARALLEL_TASKS)
+                .coerceAtLeast(1),
+            downloadThreadCount = preferences.getInt(KEY_DOWNLOAD_THREAD_COUNT, DEFAULT_DOWNLOAD_THREAD_COUNT)
+                .coerceAtLeast(1)
         )
     )
     val uiState: StateFlow<DownloaderUiState> = _uiState.asStateFlow()
@@ -113,13 +122,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setCustomDirectory(uri: Uri) {
+        val label = formatDirectoryLabel(uri)
         preferences.edit()
             .putString(KEY_CUSTOM_DIRECTORY_URI, uri.toString())
-            .putString(KEY_CUSTOM_DIRECTORY_LABEL, "自定义目录已选择")
+            .putString(KEY_CUSTOM_DIRECTORY_LABEL, label)
             .apply()
         _uiState.value = _uiState.value.copy(
             customDirectoryUri = uri.toString(),
-            customDirectoryLabel = "自定义目录已选择"
+            customDirectoryLabel = label
         )
     }
 
@@ -227,6 +237,35 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         private const val KEY_MAX_PARALLEL_TASKS = "max_parallel_tasks"
         private const val KEY_DOWNLOAD_THREAD_COUNT = "download_thread_count"
     }
+}
+
+private fun resolveDirectoryLabel(uriValue: String?, savedLabel: String?): String {
+    if (uriValue.isNullOrBlank()) return DEFAULT_DIRECTORY_LABEL
+    if (!savedLabel.isNullOrBlank() && savedLabel != LEGACY_CUSTOM_DIRECTORY_LABEL) return savedLabel
+    return runCatching { formatDirectoryLabel(Uri.parse(uriValue)) }
+        .getOrDefault(Uri.decode(uriValue))
+}
+
+private fun formatDirectoryLabel(uri: Uri): String {
+    val treeDocumentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+        ?.let(Uri::decode)
+        ?.takeIf { it.isNotBlank() }
+    if (treeDocumentId != null) {
+        return when {
+            treeDocumentId.equals("primary", ignoreCase = true) -> "/storage/emulated/0"
+            treeDocumentId.startsWith("primary:", ignoreCase = true) -> {
+                val relativePath = treeDocumentId.substringAfter(":").trim('/')
+                if (relativePath.isBlank()) "/storage/emulated/0" else "/storage/emulated/0/$relativePath"
+            }
+            ":" in treeDocumentId -> {
+                val volume = treeDocumentId.substringBefore(":")
+                val relativePath = treeDocumentId.substringAfter(":").trim('/')
+                if (relativePath.isBlank()) volume else "$volume:/$relativePath"
+            }
+            else -> treeDocumentId
+        }
+    }
+    return Uri.decode(uri.toString())
 }
 
 private data class StorageInfo(

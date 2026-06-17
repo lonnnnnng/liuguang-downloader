@@ -346,8 +346,8 @@ private fun DownloadScreen(
             )
 
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                contentPadding = PaddingValues(bottom = 76.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+                contentPadding = PaddingValues(bottom = 68.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
@@ -679,7 +679,7 @@ private fun SettingsPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
                     lineHeight = 12.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
@@ -697,20 +697,17 @@ private fun SettingsPanel(
                     Spacer(modifier = Modifier.width(5.dp))
                     Text("自定义", fontSize = 10.sp)
                 }
-            }
-            if (hasCustomDirectory) {
-                TextButton(
-                    onClick = onResetDirectory,
-                    shape = RectangleShape,
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.RestartAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text("恢复默认 Downloads/liuguang-download", fontSize = 10.sp)
+                if (hasCustomDirectory) {
+                    IconButton(
+                        onClick = onResetDirectory,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RestartAlt,
+                            contentDescription = "恢复默认目录",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
 
@@ -783,13 +780,13 @@ private fun AppBottomBar(
         tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(46.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 60.dp, top = 4.dp, end = 60.dp, bottom = 0.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                .padding(start = 64.dp, top = 2.dp, end = 64.dp, bottom = 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AppBottomBarItem(
@@ -799,7 +796,7 @@ private fun AppBottomBar(
                     Icon(
                         Icons.Default.Download,
                         contentDescription = null,
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 },
                 label = "下载",
@@ -812,7 +809,7 @@ private fun AppBottomBar(
                     Icon(
                         Icons.Default.Settings,
                         contentDescription = null,
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 },
                 label = "设置",
@@ -843,7 +840,7 @@ private fun AppBottomBarItem(
     ) {
         Column(
             modifier = Modifier
-                .width(92.dp)
+                .width(84.dp)
                 .fillMaxHeight()
                 .background(
                     color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -855,8 +852,8 @@ private fun AppBottomBarItem(
         ) {
             Box(
                 modifier = Modifier
-                    .width(64.dp)
-                    .height(24.dp),
+                    .width(56.dp)
+                    .height(20.dp),
                 contentAlignment = Alignment.Center
             ) {
                 androidx.compose.runtime.CompositionLocalProvider(
@@ -868,9 +865,9 @@ private fun AppBottomBarItem(
             Text(
                 text = label,
                 color = contentColor,
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                lineHeight = 11.sp
+                lineHeight = 10.sp
             )
         }
     }
@@ -1104,7 +1101,7 @@ private fun DownloadDirectoryPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
                         lineHeight = 12.sp,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1121,19 +1118,17 @@ private fun DownloadDirectoryPanel(
                     Spacer(modifier = Modifier.width(5.dp))
                     Text("自定义", fontSize = 10.sp)
                 }
-            }
-            if (hasCustomDirectory) {
-                TextButton(
-                    onClick = onResetDirectory,
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.RestartAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text("恢复默认 Downloads/liuguang-download", fontSize = 10.sp)
+                if (hasCustomDirectory) {
+                    IconButton(
+                        onClick = onResetDirectory,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RestartAlt,
+                            contentDescription = "恢复默认目录",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1200,9 +1195,9 @@ private fun TaskCard(
                 onClick = { showDetails = true },
                 onLongClick = { menuExpanded = true }
             ),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp)
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1249,7 +1244,7 @@ private fun TaskCard(
                         CompletedStatsRow(task = task)
                         Text(
                             text = task.detail,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 9.sp,
                             lineHeight = 12.sp,
                             maxLines = 1,

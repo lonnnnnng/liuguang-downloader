@@ -166,7 +166,7 @@ on:
 
 普通 push 不会触发发版。手动发版时需要输入：
 
-- `version_name`：例如 `1.0.0`
+- `version_name`：例如 `1.0.1`
 - `version_code`：Android `versionCode`
 - `prerelease`：是否标记为预发布
 

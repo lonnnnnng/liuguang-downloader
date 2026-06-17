@@ -301,8 +301,8 @@ class DownloadForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val REQUEST_OPEN_APP = 2001
         private const val REQUEST_CANCEL = 2002
-        private const val DEFAULT_MAX_PARALLEL_TASKS = 1
-        private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 3
+        private const val DEFAULT_MAX_PARALLEL_TASKS = 3
+        private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 8
 
         fun startDownload(
             context: Context,
