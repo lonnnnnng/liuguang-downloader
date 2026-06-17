@@ -258,7 +258,7 @@ class DownloadForegroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText("$status · $detail")
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
@@ -267,7 +267,7 @@ class DownloadForegroundService : Service() {
             .setOnlyAlertOnce(true)
             .apply {
                 if (ongoing) {
-                    addAction(R.drawable.ic_launcher, "取消", cancelPendingIntent)
+                    addAction(R.drawable.ic_launcher_monochrome, "取消", cancelPendingIntent)
                 }
             }
             .build()
