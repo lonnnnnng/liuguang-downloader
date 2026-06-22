@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -775,46 +777,58 @@ private fun AppBottomBar(
     selectedScreen: AppScreen,
     onSelectScreen: (AppScreen) -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
+    val shellColor = Color(0xFFECF6FB).copy(alpha = 0.96f)
+    val dividerColor = Color(0x1F0D415B)
+    val surfaceColor = Color.White
+    val selectedContainerColor = Color(0x211598D4)
+    val selectedContentColor = Color(0xFF1598D4)
+    val unselectedContentColor = Color(0xFF7C94A1)
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
+            .background(shellColor)
+            .border(width = 1.dp, color = dividerColor)
+            .navigationBarsPadding()
+            .padding(start = 10.dp, end = 10.dp, top = 3.dp, bottom = 4.dp)
     ) {
-        Row(
+        Surface(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 64.dp, top = 2.dp, end = 64.dp, bottom = 0.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
+                .height(46.dp),
+            color = surfaceColor,
+            contentColor = unselectedContentColor,
+            shape = RectangleShape,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, dividerColor)
         ) {
-            AppBottomBarItem(
-            selected = selectedScreen == AppScreen.Download,
-                onClick = { onSelectScreen(AppScreen.Download) },
-                icon = {
-                    Icon(
-                        Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                },
-                label = "下载",
-                modifier = Modifier.weight(1f)
-            )
-            AppBottomBarItem(
-            selected = selectedScreen == AppScreen.Settings,
-                onClick = { onSelectScreen(AppScreen.Settings) },
-                icon = {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                },
-                label = "设置",
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                AppBottomBarItem(
+                    selected = selectedScreen == AppScreen.Download,
+                    onClick = { onSelectScreen(AppScreen.Download) },
+                    icon = Icons.Default.Download,
+                    label = "下载",
+                    selectedContainerColor = selectedContainerColor,
+                    selectedContentColor = selectedContentColor,
+                    unselectedContentColor = unselectedContentColor,
+                    modifier = Modifier.weight(1f)
+                )
+                AppBottomBarItem(
+                    selected = selectedScreen == AppScreen.Settings,
+                    onClick = { onSelectScreen(AppScreen.Settings) },
+                    icon = Icons.Default.Settings,
+                    label = "设置",
+                    selectedContainerColor = selectedContainerColor,
+                    selectedContentColor = selectedContentColor,
+                    unselectedContentColor = unselectedContentColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
@@ -823,51 +837,44 @@ private fun AppBottomBar(
 private fun AppBottomBarItem(
     selected: Boolean,
     onClick: () -> Unit,
-    icon: @Composable () -> Unit,
+    icon: ImageVector,
     label: String,
+    selectedContainerColor: Color,
+    selectedContentColor: Color,
+    unselectedContentColor: Color,
     modifier: Modifier = Modifier
 ) {
     val contentColor = if (selected) {
-        MaterialTheme.colorScheme.primary
+        selectedContentColor
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        unselectedContentColor
     }
-    Column(
+    Surface(
+        onClick = onClick,
         modifier = modifier
             .fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        color = if (selected) selectedContainerColor else Color.Transparent,
+        contentColor = contentColor,
+        shape = RectangleShape
     ) {
         Column(
-            modifier = Modifier
-                .width(84.dp)
-                .fillMaxHeight()
-                .background(
-                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                    shape = RectangleShape
-                )
-                .clickable(onClick = onClick),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .width(56.dp)
-                    .height(20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                androidx.compose.runtime.CompositionLocalProvider(
-                    androidx.compose.material3.LocalContentColor provides contentColor
-                ) {
-                    icon()
-                }
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(17.dp)
+            )
+            Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = label,
                 color = contentColor,
-                fontSize = 9.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                lineHeight = 10.sp
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                fontWeight = if (selected) FontWeight.Black else FontWeight.Bold,
+                maxLines = 1
             )
         }
     }
