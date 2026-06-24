@@ -52,6 +52,7 @@ data class DownloaderUiState(
     val fileName: String = "",
     val customDirectoryUri: String? = null,
     val customDirectoryLabel: String = DEFAULT_DIRECTORY_LABEL,
+    val customDirectoryNeedsAuthorization: Boolean = false,
     val maxParallelTasks: Int = DEFAULT_MAX_PARALLEL_TASKS,
     val downloadThreadCount: Int = DEFAULT_DOWNLOAD_THREAD_COUNT,
     val storageUsedLabel: String = "",
@@ -63,6 +64,13 @@ data class DownloaderUiState(
 class DownloaderViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("downloader", Context.MODE_PRIVATE)
     private val savedCustomDirectoryUri = preferences.getString(KEY_CUSTOM_DIRECTORY_URI, null)
+    private val savedCustomDirectoryNeedsAuthorization = savedCustomDirectoryUri
+        ?.let { uriValue ->
+            !runCatching {
+                hasPersistedWritePermission(application.applicationContext, Uri.parse(uriValue))
+            }.getOrDefault(false)
+        }
+        ?: false
 
     private val _uiState = MutableStateFlow(
         DownloaderUiState(
@@ -72,6 +80,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 savedCustomDirectoryUri,
                 preferences.getString(KEY_CUSTOM_DIRECTORY_LABEL, null)
             ),
+            customDirectoryNeedsAuthorization = savedCustomDirectoryNeedsAuthorization,
             maxParallelTasks = preferences.getInt(KEY_MAX_PARALLEL_TASKS, DEFAULT_MAX_PARALLEL_TASKS)
                 .coerceAtLeast(1),
             downloadThreadCount = preferences.getInt(KEY_DOWNLOAD_THREAD_COUNT, DEFAULT_DOWNLOAD_THREAD_COUNT)
@@ -129,7 +138,8 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             .apply()
         _uiState.value = _uiState.value.copy(
             customDirectoryUri = uri.toString(),
-            customDirectoryLabel = label
+            customDirectoryLabel = label,
+            customDirectoryNeedsAuthorization = false
         )
     }
 
@@ -140,7 +150,8 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             .apply()
         _uiState.value = _uiState.value.copy(
             customDirectoryUri = null,
-            customDirectoryLabel = DEFAULT_DIRECTORY_LABEL
+            customDirectoryLabel = DEFAULT_DIRECTORY_LABEL,
+            customDirectoryNeedsAuthorization = false
         )
     }
 
@@ -240,6 +251,12 @@ private fun resolveDirectoryLabel(uriValue: String?, savedLabel: String?): Strin
     if (!savedLabel.isNullOrBlank() && savedLabel != LEGACY_CUSTOM_DIRECTORY_LABEL) return savedLabel
     return runCatching { formatDirectoryLabel(Uri.parse(uriValue)) }
         .getOrDefault(Uri.decode(uriValue))
+}
+
+private fun hasPersistedWritePermission(context: Context, uri: Uri): Boolean {
+    return context.contentResolver.persistedUriPermissions.any { permission ->
+        permission.uri == uri && permission.isWritePermission
+    }
 }
 
 private fun formatDirectoryLabel(uri: Uri): String {

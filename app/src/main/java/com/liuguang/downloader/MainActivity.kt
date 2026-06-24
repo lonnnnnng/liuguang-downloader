@@ -131,6 +131,7 @@ private fun DownloaderApp(
     val context = LocalContext.current
     var selectedScreen by remember { mutableStateOf(AppScreen.Download) }
     var openAddTaskDialogSignal by remember { mutableStateOf<Long?>(null) }
+    var pendingDirectoryAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { }
@@ -139,10 +140,23 @@ private fun DownloaderApp(
     ) { uri ->
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            runCatching {
+            val permissionResult = runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, flags)
             }
-            viewModel.setCustomDirectory(uri)
+            if (permissionResult.isSuccess) {
+                viewModel.setCustomDirectory(uri)
+                pendingDirectoryAction?.invoke()
+            }
+            pendingDirectoryAction = null
+        }
+    }
+
+    fun runAfterDirectoryAuthorization(action: () -> Unit) {
+        if (state.customDirectoryUri != null && state.customDirectoryNeedsAuthorization) {
+            pendingDirectoryAction = action
+            directoryLauncher.launch(null)
+        } else {
+            action()
         }
     }
 
@@ -208,13 +222,13 @@ private fun DownloaderApp(
                         onFileNameChange = viewModel::updateFileName,
                         onReadClipboard = viewModel::refreshClipboard,
                         onRefreshStorageInfo = viewModel::refreshStorageInfo,
-                        onCreateTask = viewModel::startDownload,
-                        onStartTask = viewModel::startTask,
+                        onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
+                        onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
                         onPauseTask = viewModel::pauseTask,
                         onCopyTaskUrl = viewModel::copyTaskUrl,
                         onOpenTask = viewModel::openTask,
                         onDeleteTask = viewModel::deleteTask,
-                        onRestartTask = viewModel::restartTask
+                        onRestartTask = { task -> runAfterDirectoryAuthorization { viewModel.restartTask(task) } }
                     )
                     AppScreen.Settings -> SettingsScreen(
                         state = state,
@@ -645,6 +659,7 @@ private fun SettingsScreen(
             SettingsPanel(
                 label = state.customDirectoryLabel,
                 hasCustomDirectory = state.customDirectoryUri != null,
+                needsAuthorization = state.customDirectoryNeedsAuthorization,
                 maxParallelTasks = state.maxParallelTasks,
                 downloadThreadCount = state.downloadThreadCount,
                 onChooseDirectory = onChooseDirectory,
@@ -660,6 +675,7 @@ private fun SettingsScreen(
 private fun SettingsPanel(
     label: String,
     hasCustomDirectory: Boolean,
+    needsAuthorization: Boolean,
     maxParallelTasks: Int,
     downloadThreadCount: Int,
     onChooseDirectory: () -> Unit,
@@ -679,7 +695,7 @@ private fun SettingsPanel(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = label,
+                    text = if (needsAuthorization) "$label · 需要授权" else label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
                     lineHeight = 12.sp,
