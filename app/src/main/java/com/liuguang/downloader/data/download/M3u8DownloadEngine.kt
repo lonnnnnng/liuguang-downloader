@@ -22,7 +22,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -65,13 +67,25 @@ class M3u8DownloadEngine(
         customDirectoryUri: Uri?,
         downloadThreadCount: Int
     ): Flow<DownloadProgress> = channelFlow {
-        val displayName = sanitizeFileName(fileNameHint).ifBlank { "liuguang-${System.currentTimeMillis()}" } + ".mp4"
+        val displayName = buildMp4DisplayName(fileNameHint)
         val workDir = workDirectoryForTask(taskId)
         val segmentDir = File(workDir, "segments")
         val tempMp4 = File(workDir, displayName)
         segmentDir.mkdirs()
 
         try {
+            if (isDirectMp4Url(url)) {
+                downloadDirectMp4(
+                    taskId = taskId,
+                    url = url,
+                    displayName = displayName,
+                    workDir = workDir,
+                    tempMp4 = tempMp4,
+                    customDirectoryUri = customDirectoryUri
+                )
+                return@channelFlow
+            }
+
             send(DownloadProgress.Preparing("正在读取 m3u8"))
             val firstPlaylistText = fetchText(taskId, url)
             val masterPlaylist = HlsMasterPlaylistParser.parse(firstPlaylistText, url)
@@ -256,6 +270,93 @@ class M3u8DownloadEngine(
         }
     }.flowOn(Dispatchers.IO)
 
+    private suspend fun kotlinx.coroutines.channels.ProducerScope<DownloadProgress>.downloadDirectMp4(
+        taskId: String,
+        url: String,
+        displayName: String,
+        workDir: File,
+        tempMp4: File,
+        customDirectoryUri: Uri?
+    ) {
+        val partialFile = File(workDir, "$displayName.part")
+        val startedAtMillis = SystemClock.elapsedRealtime()
+        val resumedBytes = partialFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
+
+        send(
+            DownloadProgress.Preparing(
+                if (resumedBytes > 0L) {
+                    "检测到已下载 ${formatDownloadBytes(resumedBytes)}，继续下载 MP4"
+                } else {
+                    "正在准备 MP4 直链下载"
+                }
+            )
+        )
+
+        val downloadedBytes = AtomicLong(resumedBytes)
+        var totalBytes = UNKNOWN_TOTAL_BYTES
+        var lastProgressEmitMillis = 0L
+
+        downloadDirectFile(
+            taskId = taskId,
+            url = url,
+            outputFile = partialFile,
+            resumeBytes = resumedBytes,
+            onResponse = { resolvedTotalBytes, actualResumeBytes ->
+                totalBytes = resolvedTotalBytes
+                downloadedBytes.set(actualResumeBytes)
+                send(
+                    DownloadProgress.FileProgress(
+                        downloadedBytes = actualResumeBytes,
+                        totalBytes = totalBytes,
+                        speedBytesPerSecond = calculateSpeed(actualResumeBytes, startedAtMillis),
+                        elapsedMillis = elapsedSince(startedAtMillis)
+                    )
+                )
+            },
+            onBytesCopied = { bytesCopied ->
+                val currentBytes = downloadedBytes.addAndGet(bytesCopied)
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastProgressEmitMillis >= PROGRESS_TICK_INTERVAL_MILLIS) {
+                    lastProgressEmitMillis = now
+                    send(
+                        DownloadProgress.FileProgress(
+                            downloadedBytes = currentBytes,
+                            totalBytes = totalBytes,
+                            speedBytesPerSecond = calculateSpeed(currentBytes, startedAtMillis),
+                            elapsedMillis = elapsedSince(startedAtMillis)
+                        )
+                    )
+                }
+            }
+        )
+
+        val finalBytes = partialFile.length()
+        send(
+            DownloadProgress.FileProgress(
+                downloadedBytes = finalBytes,
+                totalBytes = if (totalBytes > 0L) totalBytes else finalBytes,
+                speedBytesPerSecond = calculateSpeed(finalBytes, startedAtMillis),
+                elapsedMillis = elapsedSince(startedAtMillis)
+            )
+        )
+
+        if (tempMp4.exists()) tempMp4.delete()
+        check(partialFile.renameTo(tempMp4)) { "无法整理 MP4 临时文件" }
+
+        send(DownloadProgress.Publishing("正在保存到目标目录"))
+        val output = outputWriter.publishMp4(tempMp4, displayName, customDirectoryUri)
+        send(
+            DownloadProgress.Completed(
+                outputLabel = output.label,
+                outputUri = output.uri,
+                downloadedBytes = tempMp4.length(),
+                elapsedMillis = elapsedSince(startedAtMillis),
+                completedSegments = 0,
+                totalSegments = 0
+            )
+        )
+    }
+
     private suspend fun fetchText(taskId: String, url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).build()
         executeTracked(taskId, request).use { response ->
@@ -286,6 +387,55 @@ class M3u8DownloadEngine(
             var bytesCopied = 0L
             body.byteStream().use { input ->
                 outputFile.outputStream().use { output ->
+                    val buffer = ByteArray(DEFAULT_COPY_BUFFER_SIZE)
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        bytesCopied += read
+                        onBytesCopied(read.toLong())
+                    }
+                }
+            }
+            bytesCopied
+        }
+    }
+
+    private suspend fun downloadDirectFile(
+        taskId: String,
+        url: String,
+        outputFile: File,
+        resumeBytes: Long,
+        onResponse: suspend (totalBytes: Long, actualResumeBytes: Long) -> Unit,
+        onBytesCopied: suspend (Long) -> Unit
+    ): Long = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val requestBuilder = Request.Builder().url(url)
+        if (resumeBytes > 0L) {
+            requestBuilder.header("Range", "bytes=$resumeBytes-")
+        }
+        executeTracked(taskId, requestBuilder.build()).use { response ->
+            if (resumeBytes > 0L && response.code == HTTP_RANGE_NOT_SATISFIABLE) {
+                error("服务器拒绝继续下载，请重新下载任务")
+            }
+            if (!response.isSuccessful) error("MP4 下载失败：HTTP ${response.code}")
+
+            val actualResumeBytes = if (resumeBytes > 0L && response.code == HTTP_PARTIAL_CONTENT) {
+                resumeBytes
+            } else {
+                if (resumeBytes > 0L) outputFile.delete()
+                0L
+            }
+            val totalBytes = response.resolveDownloadTotalBytes(actualResumeBytes)
+            onResponse(totalBytes, actualResumeBytes)
+
+            val body = response.body ?: error("MP4 响应为空")
+            var bytesCopied = actualResumeBytes
+            val appendToPartial = actualResumeBytes > 0L
+            // long 2026-06-24 23:50:00: MP4 直链暂停后只能依赖服务端 Range，支持时追加写入；不支持时重新覆盖临时文件，避免拼出损坏视频。
+            body.byteStream().use { input ->
+                FileOutputStream(outputFile, appendToPartial).use { output ->
                     val buffer = ByteArray(DEFAULT_COPY_BUFFER_SIZE)
                     while (true) {
                         coroutineContext.ensureActive()
@@ -389,10 +539,43 @@ class M3u8DownloadEngine(
             .take(80)
     }
 
+    private fun buildMp4DisplayName(fileNameHint: String): String {
+        val sanitized = sanitizeFileName(fileNameHint).ifBlank { "liuguang-${System.currentTimeMillis()}" }
+        return if (sanitized.endsWith(".mp4", ignoreCase = true)) sanitized else "$sanitized.mp4"
+    }
+
+    private fun isDirectMp4Url(url: String): Boolean {
+        val normalized = url.trim()
+        return (normalized.startsWith("http://") || normalized.startsWith("https://")) &&
+            normalized.substringBefore("?").contains(".mp4", ignoreCase = true)
+    }
+
+    private fun Response.resolveDownloadTotalBytes(resumeBytes: Long): Long {
+        header("Content-Range")
+            ?.substringAfter("/", missingDelimiterValue = "")
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+            ?.let { return it }
+        val contentLength = body?.contentLength() ?: UNKNOWN_TOTAL_BYTES
+        return if (contentLength > 0L) resumeBytes + contentLength else UNKNOWN_TOTAL_BYTES
+    }
+
+    private fun formatDownloadBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return "%.1f KB".format(kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return "%.1f MB".format(mb)
+        return "%.2f GB".format(mb / 1024.0)
+    }
+
     private companion object {
         private const val DEFAULT_COPY_BUFFER_SIZE = 128 * 1024
         private const val PROGRESS_TICK_INTERVAL_MILLIS = 1_000L
         private const val AES_128_KEY_BYTES = 16
         private const val AES_BLOCK_BYTES = 16
+        private const val UNKNOWN_TOTAL_BYTES = -1L
+        private const val HTTP_PARTIAL_CONTENT = 206
+        private const val HTTP_RANGE_NOT_SATISFIABLE = 416
     }
 }

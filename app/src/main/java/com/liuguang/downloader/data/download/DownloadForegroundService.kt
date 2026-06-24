@@ -219,9 +219,9 @@ class DownloadForegroundService : Service() {
             else -> "已完成"
         }
         val detail = when {
-            activeTasks.size > 1 -> "打开 App 查看实时速度和分片进度 · $queuedCount 个等待"
-            primaryTask != null && queuedCount > 0 -> "打开 App 查看实时速度和分片进度 · $queuedCount 个等待"
-            primaryTask != null -> "打开 App 查看实时速度和分片进度"
+            activeTasks.size > 1 -> "打开 App 查看实时速度和下载进度 · $queuedCount 个等待"
+            primaryTask != null && queuedCount > 0 -> "打开 App 查看实时速度和下载进度 · $queuedCount 个等待"
+            primaryTask != null -> "打开 App 查看实时速度和下载进度"
             queuedCount > 0 -> "任务已加入队列"
             else -> "没有运行中的任务"
         }
@@ -279,7 +279,7 @@ class DownloadForegroundService : Service() {
             "下载进度",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "流光下载器的 m3u8 下载进度"
+            description = "流光下载器的下载进度"
         }
         manager.createNotificationChannel(channel)
     }

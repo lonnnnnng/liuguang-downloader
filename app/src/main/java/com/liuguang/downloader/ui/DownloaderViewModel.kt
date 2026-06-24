@@ -159,7 +159,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun startDownload() {
         val state = _uiState.value
         val url = state.url.trim()
-        if (!isM3u8Url(url)) return
+        if (!isSupportedDownloadUrl(url)) return
 
         val taskId = System.currentTimeMillis().toString()
         val fileName = state.fileName.ifBlank { "流光下载-$taskId" }
@@ -200,7 +200,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun copyTaskUrl(task: DownloadTaskUi) {
         val clipboard = getApplication<Application>()
             .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("m3u8", task.url))
+        clipboard.setPrimaryClip(ClipData.newPlainText("download-url", task.url))
     }
 
     fun openTask(task: DownloadTaskUi) {
@@ -214,7 +214,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun startDownloadForTask(task: DownloadTaskUi, reuseTaskId: Boolean) {
-        if (!isM3u8Url(task.url)) return
+        if (!isSupportedDownloadUrl(task.url)) return
         val state = _uiState.value
         DownloadForegroundService.startDownload(
             context = getApplication(),
@@ -331,11 +331,21 @@ fun readClipboardM3u8Candidate(context: Context): String? {
         ?.toString()
         ?.trim()
         .orEmpty()
-    return text.takeIf(::isM3u8Url)
+    return text.takeIf(::isSupportedDownloadUrl)
 }
 
 fun isM3u8Url(value: String): Boolean {
     val normalized = value.trim()
     return (normalized.startsWith("http://") || normalized.startsWith("https://")) &&
         normalized.contains(".m3u8", ignoreCase = true)
+}
+
+fun isMp4Url(value: String): Boolean {
+    val normalized = value.trim()
+    return (normalized.startsWith("http://") || normalized.startsWith("https://")) &&
+        normalized.substringBefore("?").contains(".mp4", ignoreCase = true)
+}
+
+fun isSupportedDownloadUrl(value: String): Boolean {
+    return isM3u8Url(value) || isMp4Url(value)
 }

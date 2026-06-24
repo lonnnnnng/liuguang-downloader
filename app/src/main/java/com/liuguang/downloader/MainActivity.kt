@@ -91,7 +91,7 @@ import com.liuguang.downloader.data.download.DownloadTaskState
 import com.liuguang.downloader.ui.DownloadTaskUi
 import com.liuguang.downloader.ui.DownloaderUiState
 import com.liuguang.downloader.ui.DownloaderViewModel
-import com.liuguang.downloader.ui.isM3u8Url
+import com.liuguang.downloader.ui.isSupportedDownloadUrl
 import com.liuguang.downloader.ui.theme.LiuguangDownloaderTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -259,13 +259,14 @@ private fun Intent.downloadLaunchPayload(): DownloadLaunchPayload? {
         }
     val candidates = listOfNotNull(
         deepLinkUrl,
+        getStringExtra(EXTRA_DOWNLOAD_URL),
         getStringExtra(EXTRA_M3U8_URL),
         getStringExtra(Intent.EXTRA_TEXT),
         dataString
     )
     val url = candidates
         .map(String::trim)
-        .firstOrNull(::isM3u8Url)
+        .firstOrNull(::isSupportedDownloadUrl)
         ?: return null
     val fileName = listOfNotNull(
         deepLinkFileName,
@@ -278,6 +279,7 @@ private fun Intent.downloadLaunchPayload(): DownloadLaunchPayload? {
 }
 
 private const val EXTRA_M3U8_URL = "com.liuguang.downloader.extra.M3U8_URL"
+private const val EXTRA_DOWNLOAD_URL = "com.liuguang.downloader.extra.DOWNLOAD_URL"
 private const val EXTRA_FILE_NAME = "com.liuguang.downloader.extra.FILE_NAME"
 
 @Composable
@@ -414,7 +416,7 @@ private fun AddTaskDialog(
     onDismiss: () -> Unit,
     onCreateTask: () -> Unit
 ) {
-    val valid = isM3u8Url(state.url)
+    val valid = isSupportedDownloadUrl(state.url)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
@@ -465,7 +467,7 @@ private fun AddTaskDialog(
                 OutlinedTextField(
                     value = state.url,
                     onValueChange = onUrlChange,
-                    label = { Text("m3u8 地址", fontSize = 11.sp) },
+                    label = { Text("m3u8 / MP4 地址", fontSize = 11.sp) },
                     singleLine = false,
                     minLines = 5,
                     maxLines = 5,
@@ -1280,7 +1282,11 @@ private fun TaskDetailsDialog(
                 SettingRow(label = "进度", value = "${(task.progress.coerceIn(0f, 1f) * 100).toInt()}%")
                 if (task.totalSegments > 0) {
                     SettingRow(label = "分片", value = "${task.completedSegments}/${task.totalSegments}")
+                }
+                if (task.downloadedBytes > 0L) {
                     SettingRow(label = "大小", value = formatBytes(task.downloadedBytes))
+                }
+                if (task.elapsedMillis > 0L) {
                     SettingRow(label = "用时", value = formatDuration(task.elapsedMillis))
                 }
                 SettingRow(label = "平均速度", value = formatAverageSpeed(task.downloadedBytes, task.elapsedMillis))

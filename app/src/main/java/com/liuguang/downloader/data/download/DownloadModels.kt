@@ -19,6 +19,12 @@ sealed interface DownloadProgress {
         val speedBytesPerSecond: Long,
         val elapsedMillis: Long
     ) : DownloadProgress
+    data class FileProgress(
+        val downloadedBytes: Long,
+        val totalBytes: Long,
+        val speedBytesPerSecond: Long,
+        val elapsedMillis: Long
+    ) : DownloadProgress
     data class Muxing(
         val completedSegments: Int,
         val totalSegments: Int,

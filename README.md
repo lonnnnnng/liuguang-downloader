@@ -1,6 +1,6 @@
 # 流光下载器
 
-流光下载器是一个 Android 原生 Kotlin/Compose 应用，用于接收 m3u8 在线资源链接，将 HLS 分片下载、必要时解密，并合并输出为单个 MP4 文件。
+流光下载器是一个 Android 原生 Kotlin/Compose 应用，用于接收 m3u8 或 MP4 在线资源链接；m3u8 会下载 HLS 分片、必要时解密并合并输出为单个 MP4，MP4 直链会直接下载保存。
 
 它主要作为「流光」App 的下载伴侣使用：流光负责发现、解析和播放资源；流光下载器负责在用户确认后接收下载地址并保存到本地。
 
@@ -8,9 +8,9 @@
 
 ## 功能
 
-- 自动识别剪贴板中的 m3u8 链接。
+- 自动识别剪贴板中的 m3u8 或 MP4 链接。
 - 支持从流光 App 通过 deep link 唤起并填充下载地址和文件名。
-- 新建下载任务弹框支持手动编辑 m3u8 地址和文件名。
+- 新建下载任务弹框支持手动编辑 m3u8 / MP4 地址和文件名。
 - 支持下载队列、暂停、继续、删除、重新下载、复制下载链接、打开已下载文件。
 - 支持任务历史持久化，App 重启后保留历史下载记录。
 - 支持按状态筛选任务：全部、队列中、下载中、已完成、失败。
@@ -18,7 +18,7 @@
 - 默认保存到系统 `Downloads/liuguang-download` 目录。
 - 支持在 App 内通过 Android Storage Access Framework 自定义保存目录。
 - 支持 master playlist 自动选择清晰度：优先最高分辨率，其次最高带宽。
-- 支持常见 MPEG-TS HLS 分片下载和 MP4 合并。
+- 支持常见 MPEG-TS HLS 分片下载、MP4 合并，以及 MP4 直链下载。
 - 支持常见 `#EXT-X-KEY:METHOD=AES-128` 的 TS-HLS 加密流。
 - 遇到 DRM、`SAMPLE-AES`、fMP4、BYTERANGE 等暂不支持格式时会提示失败原因。
 
@@ -55,8 +55,8 @@
 
 ### App 内创建任务
 
-1. 复制一个 m3u8 链接，或在首页点击右下角 `+`。
-2. 在弹框中填入 m3u8 地址。
+1. 复制一个 m3u8 或 MP4 链接，或在首页点击右下角 `+`。
+2. 在弹框中填入 m3u8 / MP4 地址。
 3. 可选：填写输出文件名。
 4. 点击「确定」加入下载队列。
 5. 下载完成后，在任务详情中点击「打开」播放本地 MP4。
@@ -76,12 +76,12 @@ Downloads/liuguang-download
 推荐使用专用 deep link：
 
 ```text
-liuguangdl://download/add?url=<encoded_m3u8_url>&title=<encoded_file_name>
+liuguangdl://download/add?url=<encoded_download_url>&title=<encoded_file_name>
 ```
 
 参数说明：
 
-- `url`：必填，m3u8 在线资源地址，需要 URL encode。
+- `url`：必填，m3u8 或 MP4 在线资源地址，需要 URL encode。
 - `title`：可选，建议传视频名、剧集名或 `剧名-第几集`，需要 URL encode。
 
 示例：
@@ -97,7 +97,7 @@ val deepLink = Uri.Builder()
     .scheme("liuguangdl")
     .authority("download")
     .path("add")
-    .appendQueryParameter("url", m3u8Url)
+    .appendQueryParameter("url", downloadUrl)
     .appendQueryParameter("title", fileName)
     .build()
 
@@ -108,13 +108,14 @@ val intent = Intent(Intent.ACTION_VIEW, deepLink).apply {
 startActivity(intent)
 ```
 
-下载器收到后会打开新建任务弹框，并自动填充 m3u8 地址和文件名。用户点击「确定」后才会开始下载。
+下载器收到后会打开新建任务弹框，并自动填充下载地址和文件名。用户点击「确定」后才会开始下载。
 
 兼容 Intent extra：
 
 ```kotlin
 Intent(Intent.ACTION_VIEW).apply {
     setPackage("com.liuguang.downloader")
+    putExtra("com.liuguang.downloader.extra.DOWNLOAD_URL", downloadUrl)
     putExtra("com.liuguang.downloader.extra.M3U8_URL", m3u8Url)
     putExtra("com.liuguang.downloader.extra.FILE_NAME", fileName)
 }

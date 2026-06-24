@@ -160,6 +160,33 @@ object DownloadTaskStore {
                 speedBytesPerSecond = progress.speedBytesPerSecond,
                 elapsedMillis = progress.elapsedMillis
             )
+            is DownloadProgress.FileProgress -> copy(
+                state = DownloadTaskState.Running,
+                status = "下载中",
+                progress = if (progress.totalBytes > 0L) {
+                    (progress.downloadedBytes.toFloat() / progress.totalBytes).coerceIn(0f, 1f)
+                } else {
+                    0f
+                },
+                detail = buildString {
+                    append("MP4 文件 · ")
+                    append(formatBytes(progress.downloadedBytes))
+                    if (progress.totalBytes > 0L) {
+                        append(" / ")
+                        append(formatBytes(progress.totalBytes))
+                    }
+                    append(" · ")
+                    append(formatSpeed(progress.speedBytesPerSecond))
+                    append(" · ")
+                    append(formatDuration(progress.elapsedMillis))
+                },
+                isRunning = true,
+                completedSegments = 0,
+                totalSegments = 0,
+                downloadedBytes = progress.downloadedBytes,
+                speedBytesPerSecond = progress.speedBytesPerSecond,
+                elapsedMillis = progress.elapsedMillis
+            )
             is DownloadProgress.Muxing -> copy(
                 state = DownloadTaskState.Running,
                 status = "合并 MP4",
