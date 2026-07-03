@@ -12,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,8 +74,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -186,65 +183,54 @@ private fun DownloaderApp(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0f)
-                            )
-                        )
-                    )
-            )
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 14.dp)
-                    .padding(top = 8.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                AppHeader(selectedScreen)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                ) {
+                    AppHeader(selectedScreen)
 
-                when (selectedScreen) {
-                    AppScreen.Download -> DownloadScreen(
-                        state = state,
-                        openAddTaskDialogSignal = openAddTaskDialogSignal,
-                        onAddTaskDialogSignalConsumed = { openAddTaskDialogSignal = null },
-                        onUrlChange = viewModel::updateUrl,
-                        onFileNameChange = viewModel::updateFileName,
-                        onReadClipboard = viewModel::refreshClipboard,
-                        onRefreshStorageInfo = viewModel::refreshStorageInfo,
-                        onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
-                        onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
-                        onPauseTask = viewModel::pauseTask,
-                        onCopyTaskUrl = viewModel::copyTaskUrl,
-                        onOpenTask = viewModel::openTask,
-                        onDeleteTask = viewModel::deleteTask,
-                        onRestartTask = { task -> runAfterDirectoryAuthorization { viewModel.restartTask(task) } }
-                    )
-                    AppScreen.Settings -> SettingsScreen(
-                        state = state,
-                        onChooseDirectory = { directoryLauncher.launch(null) },
-                        onResetDirectory = viewModel::resetDirectory,
-                        onMaxParallelChange = viewModel::setMaxParallelTasks,
-                        onDownloadThreadChange = viewModel::setDownloadThreadCount
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 14.dp)
+                            .padding(top = 6.dp)
+                    ) {
+                        when (selectedScreen) {
+                            AppScreen.Download -> DownloadScreen(
+                                state = state,
+                                openAddTaskDialogSignal = openAddTaskDialogSignal,
+                                onAddTaskDialogSignalConsumed = { openAddTaskDialogSignal = null },
+                                onUrlChange = viewModel::updateUrl,
+                                onFileNameChange = viewModel::updateFileName,
+                                onReadClipboard = viewModel::refreshClipboard,
+                                onRefreshStorageInfo = viewModel::refreshStorageInfo,
+                                onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
+                                onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
+                                onPauseTask = viewModel::pauseTask,
+                                onCopyTaskUrl = viewModel::copyTaskUrl,
+                                onOpenTask = viewModel::openTask,
+                                onDeleteTask = viewModel::deleteTask,
+                                onRestartTask = { task -> runAfterDirectoryAuthorization { viewModel.restartTask(task) } }
+                            )
+                            AppScreen.Settings -> SettingsScreen(
+                                state = state,
+                                onChooseDirectory = { directoryLauncher.launch(null) },
+                                onResetDirectory = viewModel::resetDirectory,
+                                onMaxParallelChange = viewModel::setMaxParallelTasks,
+                                onDownloadThreadChange = viewModel::setDownloadThreadCount
+                            )
+                        }
+                    }
                 }
-            }
 
-            AppBottomBar(
-                selectedScreen = selectedScreen,
-                onSelectScreen = { selectedScreen = it }
-            )
-        }
+                AppBottomBar(
+                    selectedScreen = selectedScreen,
+                    onSelectScreen = { selectedScreen = it }
+                )
         }
     }
 }
@@ -301,14 +287,7 @@ private fun AppHeader(selectedScreen: AppScreen) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RectangleShape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f))
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
-                shape = RectangleShape
-            )
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
         Text(
             text = when (selectedScreen) {
@@ -316,8 +295,16 @@ private fun AppHeader(selectedScreen: AppScreen) {
                 AppScreen.Settings -> "设置"
             },
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outline)
         )
     }
 }
@@ -436,7 +423,7 @@ private fun AddTaskDialog(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .widthIn(max = 360.dp),
-            shape = RectangleShape,
+            shape = MaterialTheme.shapes.medium,
             tonalElevation = 2.dp,
             shadowElevation = 8.dp,
             color = MaterialTheme.colorScheme.surface
@@ -485,7 +472,7 @@ private fun AddTaskDialog(
                     singleLine = false,
                     minLines = 5,
                     maxLines = 5,
-                    shape = RectangleShape,
+                    shape = MaterialTheme.shapes.small,
                     textStyle = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -498,7 +485,7 @@ private fun AddTaskDialog(
                     singleLine = false,
                     minLines = 3,
                     maxLines = 3,
-                    shape = RectangleShape,
+                    shape = MaterialTheme.shapes.small,
                     textStyle = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -516,7 +503,7 @@ private fun AddTaskDialog(
                 ) {
                     TextButton(
                         onClick = onDismiss,
-                        shape = RectangleShape,
+                        shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text("取消", fontSize = 11.sp)
@@ -524,7 +511,7 @@ private fun AddTaskDialog(
                     Button(
                         onClick = onCreateTask,
                         enabled = valid,
-                        shape = RectangleShape,
+                        shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text("确定", fontSize = 11.sp)
@@ -544,7 +531,7 @@ private fun StorageInfoRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RectangleShape)
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -618,7 +605,7 @@ private fun DownloadStatusTabs(
                         .weight(1f)
                         .fillMaxHeight()
                         .padding(horizontal = 2.dp)
-                        .clip(RectangleShape)
+                        .clip(MaterialTheme.shapes.small)
                         .background(
                             if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                         )
@@ -705,7 +692,7 @@ private fun SettingsPanel(
                 )
                 FilledTonalButton(
                     onClick = onChooseDirectory,
-                    shape = RectangleShape,
+                    shape = MaterialTheme.shapes.small,
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     modifier = Modifier.height(32.dp)
                 ) {
@@ -795,58 +782,39 @@ private fun AppBottomBar(
     selectedScreen: AppScreen,
     onSelectScreen: (AppScreen) -> Unit
 ) {
-    val shellColor = Color(0xFFECF6FB).copy(alpha = 0.96f)
-    val dividerColor = Color(0x1F0D415B)
-    val surfaceColor = Color.White
-    val selectedContainerColor = Color(0x211598D4)
-    val selectedContentColor = Color(0xFF1598D4)
-    val unselectedContentColor = Color(0xFF7C94A1)
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(shellColor)
-            .border(width = 1.dp, color = dividerColor)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
             .navigationBarsPadding()
-            .padding(start = 10.dp, end = 10.dp, top = 3.dp, bottom = 4.dp)
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp),
-            color = surfaceColor,
-            contentColor = unselectedContentColor,
-            shape = RectangleShape,
-            shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, dividerColor)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outline)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(3.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                AppBottomBarItem(
-                    selected = selectedScreen == AppScreen.Download,
-                    onClick = { onSelectScreen(AppScreen.Download) },
-                    icon = Icons.Default.Download,
-                    label = "下载",
-                    selectedContainerColor = selectedContainerColor,
-                    selectedContentColor = selectedContentColor,
-                    unselectedContentColor = unselectedContentColor,
-                    modifier = Modifier.weight(1f)
-                )
-                AppBottomBarItem(
-                    selected = selectedScreen == AppScreen.Settings,
-                    onClick = { onSelectScreen(AppScreen.Settings) },
-                    icon = Icons.Default.Settings,
-                    label = "设置",
-                    selectedContainerColor = selectedContainerColor,
-                    selectedContentColor = selectedContentColor,
-                    unselectedContentColor = unselectedContentColor,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            AppBottomBarItem(
+                selected = selectedScreen == AppScreen.Download,
+                onClick = { onSelectScreen(AppScreen.Download) },
+                icon = Icons.Default.Download,
+                label = "下载",
+                modifier = Modifier.weight(1f)
+            )
+            AppBottomBarItem(
+                selected = selectedScreen == AppScreen.Settings,
+                onClick = { onSelectScreen(AppScreen.Settings) },
+                icon = Icons.Default.Settings,
+                label = "设置",
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -857,29 +825,34 @@ private fun AppBottomBarItem(
     onClick: () -> Unit,
     icon: ImageVector,
     label: String,
-    selectedContainerColor: Color,
-    selectedContentColor: Color,
-    unselectedContentColor: Color,
     modifier: Modifier = Modifier
 ) {
     val contentColor = if (selected) {
-        selectedContentColor
+        MaterialTheme.colorScheme.primary
     } else {
-        unselectedContentColor
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
     }
     Surface(
         onClick = onClick,
         modifier = modifier
             .fillMaxHeight(),
-        color = if (selected) selectedContainerColor else Color.Transparent,
+        color = Color.Transparent,
         contentColor = contentColor,
-        shape = RectangleShape
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Box(
+                modifier = Modifier
+                    .width(18.dp)
+                    .height(2.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+            )
+            Spacer(modifier = Modifier.height(3.dp))
             Icon(
                 imageVector = icon,
                 contentDescription = label,
@@ -891,7 +864,7 @@ private fun AppBottomBarItem(
                 color = contentColor,
                 fontSize = 10.sp,
                 lineHeight = 12.sp,
-                fontWeight = if (selected) FontWeight.Black else FontWeight.Bold,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1
             )
         }
@@ -994,6 +967,22 @@ private fun TaskCard(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
+    val statusColor = when (task.state) {
+        DownloadTaskState.Failed -> MaterialTheme.colorScheme.error
+        DownloadTaskState.Canceled,
+        DownloadTaskState.Paused -> MaterialTheme.colorScheme.onSurfaceVariant
+        DownloadTaskState.Completed -> MaterialTheme.colorScheme.primary
+        DownloadTaskState.Queued,
+        DownloadTaskState.Running -> MaterialTheme.colorScheme.primary
+    }
+    val statusBackground = when (task.state) {
+        DownloadTaskState.Failed -> MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+        DownloadTaskState.Completed,
+        DownloadTaskState.Queued,
+        DownloadTaskState.Running -> MaterialTheme.colorScheme.primaryContainer
+        DownloadTaskState.Canceled,
+        DownloadTaskState.Paused -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
+    }
 
     Box {
         SurfaceCard(
@@ -1001,9 +990,9 @@ private fun TaskCard(
                 onClick = { showDetails = true },
                 onLongClick = { menuExpanded = true }
             ),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp)
+            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1021,24 +1010,21 @@ private fun TaskCard(
                     )
                     Text(
                         text = task.status,
-                        color = when (task.state) {
-                            DownloadTaskState.Failed -> MaterialTheme.colorScheme.error
-                            DownloadTaskState.Canceled,
-                            DownloadTaskState.Paused -> MaterialTheme.colorScheme.onSurfaceVariant
-                            DownloadTaskState.Completed -> MaterialTheme.colorScheme.primary
-                            DownloadTaskState.Queued,
-                            DownloadTaskState.Running -> MaterialTheme.colorScheme.primary
-                        },
+                        color = statusColor,
                         fontSize = 9.sp,
                         lineHeight = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.small)
+                            .background(statusBackground)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
                 Text(
                     text = task.url,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 9.sp,
-                    lineHeight = 11.sp,
+                    lineHeight = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1279,7 +1265,7 @@ private fun TaskDetailsDialog(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .widthIn(max = 380.dp),
-            shape = RectangleShape,
+            shape = MaterialTheme.shapes.medium,
             tonalElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface
         ) {
@@ -1393,19 +1379,18 @@ private fun SurfaceCard(
     contentPadding: PaddingValues = PaddingValues(8.dp),
     content: @Composable () -> Unit
 ) {
+    val cardShape = MaterialTheme.shapes.medium
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = RectangleShape,
+        shape = cardShape,
         tonalElevation = 0.dp,
-        shadowElevation = 3.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.86f)
+        ),
         modifier = modifier
             .fillMaxWidth()
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
-                shape = RectangleShape
-            )
-            .background(MaterialTheme.colorScheme.surface, RectangleShape)
     ) {
         Column(modifier = Modifier.padding(contentPadding)) {
             content()

@@ -152,7 +152,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 正式发版
 
-仓库内置 GitHub Actions 发布流水线：
+正式包需要使用 release keystore 签名。本地打包时先加载签名环境变量，再执行 release 构建：
+
+```bash
+set -a
+source local-signing/liuguang-release.env
+set +a
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew --no-daemon assembleRelease
+```
+
+本地构建完成后，将 `app-release.apk` 复制为带版本号的文件并上传到 GitHub Releases。
+
+仓库也保留 GitHub Actions 发布流水线：
 
 ```text
 .github/workflows/release.yml
