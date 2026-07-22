@@ -36,6 +36,7 @@
 - SharedPreferences + JSON 任务持久化
 - Gradle Kotlin DSL
 - GitHub Actions 手动发版流水线
+- GitHub Releases 版本检查与系统安装器更新
 
 ## 系统要求
 
@@ -49,7 +50,7 @@
 
 ### 下载安装
 
-从 GitHub Releases 下载最新 APK：
+当前稳定版为 `v1.0.7`。从 GitHub Releases 下载最新 APK：
 
 - [Releases](https://github.com/lonnnnnng/liuguang-downloader/releases)
 
@@ -182,8 +183,8 @@ on:
 
 普通 push 不会触发发版。手动发版时需要输入：
 
-- `version_name`：例如 `1.0.1`
-- `version_code`：Android `versionCode`
+- `version_name`：下一个语义化版本号，例如 `1.0.8`
+- `version_code`：大于当前 `107` 的 Android `versionCode`
 - `prerelease`：是否标记为预发布
 
 正式签名需要配置以下 GitHub Actions Secrets：
@@ -199,6 +200,7 @@ on:
 app/src/main/java/com/liuguang/downloader/
 ├── MainActivity.kt                         # Compose UI 和入口
 ├── data/download/                          # 下载服务、任务存储、分片下载、MP4 合并
+├── data/update/                            # GitHub Release 检查、APK 校验与系统安装
 ├── domain/hls/                             # HLS playlist 解析
 └── ui/                                     # ViewModel 和主题
 

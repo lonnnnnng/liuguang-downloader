@@ -4,13 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: "Version name, for example 1.0.1"
+        description: "Next version name, for example 1.0.8"
         required: true
-        default: "1.0.5"
       version_code:
-        description: "Android versionCode"
+        description: "Android versionCode, greater than the latest release"
         required: true
-        default: "105"
       prerelease:
         description: "Mark GitHub Release as prerelease"
         required: true
