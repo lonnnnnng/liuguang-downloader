@@ -17,6 +17,8 @@
 - 支持设置最大并行任务数和分片下载线程数。
 - 默认保存到系统 `Downloads/liuguang-download` 目录。
 - 支持在 App 内通过 Android Storage Access Framework 自定义保存目录。
+- 下载页和设置页执行系统返回手势时会先确认是否退出，后台下载不会因此被取消。
+- 启动时自动检查 GitHub Releases，设置页也可手动检查、下载并调用系统安装器更新。
 - 支持 master playlist 自动选择清晰度：优先最高分辨率，其次最高带宽。
 - 支持常见 MPEG-TS HLS 分片下载、MP4 合并，以及 MP4 直链下载。
 - 支持常见 `#EXT-X-KEY:METHOD=AES-128` 的 TS-HLS 加密流。
@@ -52,6 +54,8 @@
 - [Releases](https://github.com/lonnnnnng/liuguang-downloader/releases)
 
 安装后打开「流光下载器」，可以通过剪贴板、手动输入或流光 App 唤起创建下载任务。
+
+App 会通过 GitHub Releases 检查正式版更新。下载后的 APK 必须通过 HTTPS 来源、SHA-256、包名、版本号和签名证书校验；Android 8.0 及以上首次在线安装时，需要按系统提示允许流光下载器安装未知来源应用，最终安装仍由用户在系统安装界面确认。
 
 ### App 内创建任务
 

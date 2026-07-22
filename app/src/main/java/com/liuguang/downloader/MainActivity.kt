@@ -1,16 +1,19 @@
 package com.liuguang.downloader
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -50,14 +53,17 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -73,9 +79,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,9 +93,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.liuguang.downloader.data.download.DownloadTaskState
+import com.liuguang.downloader.data.update.ApkUpdateInstaller
+import com.liuguang.downloader.data.update.UpdateStatus
+import com.liuguang.downloader.data.update.UpdateUiState
 import com.liuguang.downloader.ui.DownloadTaskUi
 import com.liuguang.downloader.ui.DownloaderUiState
 import com.liuguang.downloader.ui.DownloaderViewModel
+import com.liuguang.downloader.ui.UpdateViewModel
 import com.liuguang.downloader.ui.isSupportedDownloadUrl
 import com.liuguang.downloader.ui.theme.LiuguangDownloaderTheme
 import java.text.SimpleDateFormat
@@ -122,13 +134,20 @@ class MainActivity : ComponentActivity() {
 private fun DownloaderApp(
     launchPayload: DownloadLaunchPayload?,
     onLaunchPayloadConsumed: () -> Unit,
-    viewModel: DownloaderViewModel = viewModel()
+    viewModel: DownloaderViewModel = viewModel(),
+    updateViewModel: UpdateViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val updateState by updateViewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val activity = context.findActivity()
     var selectedScreen by remember { mutableStateOf(AppScreen.Download) }
     var openAddTaskDialogSignal by remember { mutableStateOf<Long?>(null) }
     var pendingDirectoryAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showExitDialog by remember { mutableStateOf(false) }
+    var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+    var dismissedInstallationPromptId by remember { mutableStateOf<Long?>(null) }
+    var pendingInstallFile by remember { mutableStateOf<java.io.File?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { }
@@ -146,6 +165,31 @@ private fun DownloaderApp(
             }
             pendingDirectoryAction = null
         }
+    }
+    val unknownSourcesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        val file = pendingInstallFile
+        pendingInstallFile = null
+        if (activity != null && file != null && ApkUpdateInstaller.canInstall(activity)) {
+            ApkUpdateInstaller.launchInstaller(activity, file)
+        }
+    }
+
+    fun installUpdate() {
+        val file = updateState.downloadedFile ?: return
+        val currentActivity = activity ?: return
+        if (ApkUpdateInstaller.canInstall(currentActivity)) {
+            ApkUpdateInstaller.launchInstaller(currentActivity, file)
+        } else {
+            // author: long - Android 8 起安装来源授权按应用管理，首次更新先让用户在系统页明确授权。
+            pendingInstallFile = file
+            unknownSourcesLauncher.launch(ApkUpdateInstaller.permissionIntent(currentActivity))
+        }
+    }
+
+    BackHandler {
+        showExitDialog = true
     }
 
     fun runAfterDirectoryAuthorization(action: () -> Unit) {
@@ -218,10 +262,17 @@ private fun DownloaderApp(
                             )
                             AppScreen.Settings -> SettingsScreen(
                                 state = state,
+                                updateState = updateState,
                                 onChooseDirectory = { directoryLauncher.launch(null) },
                                 onResetDirectory = viewModel::resetDirectory,
                                 onMaxParallelChange = viewModel::setMaxParallelTasks,
-                                onDownloadThreadChange = viewModel::setDownloadThreadCount
+                                onDownloadThreadChange = viewModel::setDownloadThreadCount,
+                                onCheckUpdate = {
+                                    dismissedUpdateVersion = null
+                                    updateViewModel.checkForUpdates()
+                                },
+                                onDownloadUpdate = updateViewModel::downloadUpdate,
+                                onInstallUpdate = ::installUpdate
                             )
                         }
                     }
@@ -233,6 +284,63 @@ private fun DownloaderApp(
                 )
         }
     }
+
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            icon = { Icon(Icons.Default.Info, contentDescription = null) },
+            title = { Text("退出流光下载器？") },
+            text = { Text("正在运行的下载任务会继续在后台执行。") },
+            dismissButton = {
+                TextButton(onClick = { showExitDialog = false }) { Text("取消") }
+            },
+            confirmButton = {
+                Button(onClick = { activity?.finish() }) { Text("退出") }
+            }
+        )
+    }
+
+    val availableRelease = updateState.release
+    if (
+        updateState.status == UpdateStatus.Available &&
+        availableRelease != null &&
+        dismissedUpdateVersion != availableRelease.versionName
+    ) {
+        UpdateAvailableDialog(
+            state = updateState,
+            onDismiss = { dismissedUpdateVersion = availableRelease.versionName },
+            onDownload = updateViewModel::downloadUpdate
+        )
+    }
+
+    val readyFile = updateState.downloadedFile
+    if (
+        updateState.status == UpdateStatus.ReadyToInstall &&
+        readyFile != null &&
+        dismissedInstallationPromptId != updateState.installationPromptId
+    ) {
+        AlertDialog(
+            onDismissRequest = { dismissedInstallationPromptId = updateState.installationPromptId },
+            icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
+            title = { Text("更新已准备好") },
+            text = { Text("安装包已完成摘要、应用标识、版本和签名校验。") },
+            dismissButton = {
+                TextButton(onClick = {
+                    dismissedInstallationPromptId = updateState.installationPromptId
+                    selectedScreen = AppScreen.Settings
+                }) { Text("稍后") }
+            },
+            confirmButton = {
+                Button(onClick = ::installUpdate) { Text("立即安装") }
+            }
+        )
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private enum class AppScreen {
@@ -284,10 +392,11 @@ private const val EXTRA_FILE_NAME = "com.liuguang.downloader.extra.FILE_NAME"
 
 @Composable
 private fun AppHeader(selectedScreen: AppScreen) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
         Text(
             text = when (selectedScreen) {
@@ -297,14 +406,7 @@ private fun AppHeader(selectedScreen: AppScreen) {
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 16.sp,
             lineHeight = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outline)
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -371,24 +473,27 @@ private fun DownloadScreen(
             }
         }
 
-        FloatingActionButton(
-            onClick = {
-                onUrlChange("")
-                onFileNameChange("")
-                onRefreshStorageInfo()
-                showAddTaskDialog = true
-            },
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.primary,
-            shape = CircleShape,
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(14.dp)
+                .size(52.dp)
+                .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(role = Role.Button) {
+                    onUrlChange("")
+                    onFileNameChange("")
+                    onRefreshStorageInfo()
+                    showAddTaskDialog = true
+                },
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Add,
                 contentDescription = "新建下载任务",
-                modifier = Modifier.size(26.dp)
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
@@ -590,41 +695,46 @@ private fun DownloadStatusTabs(
     onFilterSelected: (TaskFilter) -> Unit
 ) {
     val filters = TaskFilter.entries
-    SurfaceCard(contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            filters.forEach { filter ->
-                val selected = selectedFilter == filter
-                val count = tasks.count(filter::matches)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(horizontal = 2.dp)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                        )
-                        .clickable { onFilterSelected(filter) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "${filter.label}($count)",
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        filters.forEach { filter ->
+            val selected = selectedFilter == filter
+            val count = tasks.count(filter::matches)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(horizontal = 1.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(
+                        if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        fontSize = 9.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center
+                            Color.Transparent
+                        }
                     )
-                }
+                    .clickable { onFilterSelected(filter) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "${filter.label}($count)",
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontSize = 9.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -633,10 +743,14 @@ private fun DownloadStatusTabs(
 @Composable
 private fun SettingsScreen(
     state: DownloaderUiState,
+    updateState: UpdateUiState,
     onChooseDirectory: () -> Unit,
     onResetDirectory: () -> Unit,
     onMaxParallelChange: (Int) -> Unit,
-    onDownloadThreadChange: (Int) -> Unit
+    onDownloadThreadChange: (Int) -> Unit,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -649,10 +763,14 @@ private fun SettingsScreen(
                 needsAuthorization = state.customDirectoryNeedsAuthorization,
                 maxParallelTasks = state.maxParallelTasks,
                 downloadThreadCount = state.downloadThreadCount,
+                updateState = updateState,
                 onChooseDirectory = onChooseDirectory,
                 onResetDirectory = onResetDirectory,
                 onMaxParallelChange = onMaxParallelChange,
-                onDownloadThreadChange = onDownloadThreadChange
+                onDownloadThreadChange = onDownloadThreadChange,
+                onCheckUpdate = onCheckUpdate,
+                onDownloadUpdate = onDownloadUpdate,
+                onInstallUpdate = onInstallUpdate
             )
         }
     }
@@ -665,10 +783,14 @@ private fun SettingsPanel(
     needsAuthorization: Boolean,
     maxParallelTasks: Int,
     downloadThreadCount: Int,
+    updateState: UpdateUiState,
     onChooseDirectory: () -> Unit,
     onResetDirectory: () -> Unit,
     onMaxParallelChange: (Int) -> Unit,
-    onDownloadThreadChange: (Int) -> Unit
+    onDownloadThreadChange: (Int) -> Unit,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit
 ) {
     SurfaceCard(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -750,8 +872,126 @@ private fun SettingsPanel(
             SettingRow(label = "支持", value = "普通 / AES-128 TS-HLS")
             SettingRow(label = "暂不支持", value = "SAMPLE-AES、fMP4、BYTERANGE")
             SettingRow(label = "请求头", value = "暂不自定义")
+
+            SettingsSectionHeader(
+                icon = Icons.Default.SystemUpdate,
+                title = "应用更新"
+            )
+            UpdateSettingsRow(
+                state = updateState,
+                onCheckUpdate = onCheckUpdate,
+                onDownloadUpdate = onDownloadUpdate,
+                onInstallUpdate = onInstallUpdate
+            )
         }
     }
+}
+
+@Composable
+private fun UpdateSettingsRow(
+    state: UpdateUiState,
+    onCheckUpdate: () -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onInstallUpdate: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "当前版本 ${state.currentVersionName}",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp
+                )
+                Text(
+                    text = updateStatusText(state),
+                    color = if (state.status == UpdateStatus.Error) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            when (state.status) {
+                UpdateStatus.Available -> FilledTonalButton(
+                    onClick = onDownloadUpdate,
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                ) { Text("更新", fontSize = 10.sp) }
+                UpdateStatus.ReadyToInstall -> Button(
+                    onClick = onInstallUpdate,
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                ) { Text("安装", fontSize = 10.sp) }
+                else -> IconButton(
+                    onClick = onCheckUpdate,
+                    enabled = state.status != UpdateStatus.Checking && state.status != UpdateStatus.Downloading,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "检查更新",
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+            }
+        }
+        if (state.status == UpdateStatus.Downloading) {
+            LinearProgressIndicator(
+                progress = { state.downloadProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+            )
+        }
+    }
+}
+
+private fun updateStatusText(state: UpdateUiState): String = when (state.status) {
+    UpdateStatus.Idle -> state.release?.let { "最新版本 ${it.versionName}" } ?: "点击检查更新"
+    UpdateStatus.Checking -> "正在检查更新..."
+    UpdateStatus.UpToDate -> state.message ?: "当前已是最新版本"
+    UpdateStatus.Available -> "发现新版本 ${state.release?.versionName.orEmpty()}"
+    UpdateStatus.Downloading -> "正在下载 ${(state.downloadProgress * 100).toInt()}%"
+    UpdateStatus.ReadyToInstall -> state.message ?: "安装包已下载"
+    UpdateStatus.Error -> state.message ?: "更新失败"
+}
+
+@Composable
+private fun UpdateAvailableDialog(
+    state: UpdateUiState,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit
+) {
+    val release = state.release ?: return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
+        title = { Text("发现新版本 ${release.versionName}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(release.title, fontWeight = FontWeight.SemiBold)
+                if (release.notes.isNotBlank()) {
+                    Text(
+                        text = release.notes,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } },
+        confirmButton = { Button(onClick = onDownload) { Text("下载更新") } }
+    )
 }
 
 @Composable
@@ -788,12 +1028,6 @@ private fun AppBottomBar(
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
             .navigationBarsPadding()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outline)
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1385,10 +1619,6 @@ private fun SurfaceCard(
         shape = cardShape,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.86f)
-        ),
         modifier = modifier
             .fillMaxWidth()
     ) {
