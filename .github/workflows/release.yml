@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: "Next version name, for example 1.0.8"
+        description: "Next version name, for example 1.0.9"
         required: true
       version_code:
         description: "Android versionCode, greater than the latest release"

@@ -13,6 +13,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -39,9 +41,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
@@ -58,11 +62,13 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -752,139 +758,201 @@ private fun SettingsScreen(
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit
 ) {
+    var showDownloadCapabilities by remember { mutableStateOf(false) }
+
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.fillMaxWidth()
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 14.dp),
+        modifier = Modifier.fillMaxSize()
     ) {
         item {
-            SettingsPanel(
-                label = state.customDirectoryLabel,
-                hasCustomDirectory = state.customDirectoryUri != null,
-                needsAuthorization = state.customDirectoryNeedsAuthorization,
-                maxParallelTasks = state.maxParallelTasks,
-                downloadThreadCount = state.downloadThreadCount,
-                updateState = updateState,
-                onChooseDirectory = onChooseDirectory,
-                onResetDirectory = onResetDirectory,
-                onMaxParallelChange = onMaxParallelChange,
-                onDownloadThreadChange = onDownloadThreadChange,
-                onCheckUpdate = onCheckUpdate,
-                onDownloadUpdate = onDownloadUpdate,
-                onInstallUpdate = onInstallUpdate
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsPanel(
-    label: String,
-    hasCustomDirectory: Boolean,
-    needsAuthorization: Boolean,
-    maxParallelTasks: Int,
-    downloadThreadCount: Int,
-    updateState: UpdateUiState,
-    onChooseDirectory: () -> Unit,
-    onResetDirectory: () -> Unit,
-    onMaxParallelChange: (Int) -> Unit,
-    onDownloadThreadChange: (Int) -> Unit,
-    onCheckUpdate: () -> Unit,
-    onDownloadUpdate: () -> Unit,
-    onInstallUpdate: () -> Unit
-) {
-    SurfaceCard(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SettingsSectionHeader(
-                icon = Icons.Default.Folder,
-                title = "保存目录"
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = if (needsAuthorization) "$label · 需要授权" else label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    lineHeight = 12.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                FilledTonalButton(
-                    onClick = onChooseDirectory,
-                    shape = MaterialTheme.shapes.small,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+            SettingsCategory(title = "存储") {
+                SettingsGroup {
+                    SettingsItem(
+                        icon = Icons.Default.Folder,
+                        title = "保存目录",
+                        summary = if (state.customDirectoryNeedsAuthorization) {
+                            "需要重新授权 · ${state.customDirectoryLabel}"
+                        } else {
+                            state.customDirectoryLabel
+                        },
+                        summaryColor = if (state.customDirectoryNeedsAuthorization) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        onClick = onChooseDirectory,
+                        trailing = { SettingsChevron() }
                     )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text("自定义", fontSize = 10.sp)
-                }
-                if (hasCustomDirectory) {
-                    IconButton(
-                        onClick = onResetDirectory,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.RestartAlt,
-                            contentDescription = "恢复默认目录",
-                            modifier = Modifier.size(16.dp)
+                    if (state.customDirectoryUri != null) {
+                        SettingsDivider()
+                        SettingsItem(
+                            icon = Icons.Default.RestartAlt,
+                            title = "恢复默认目录",
+                            summary = "Downloads/liuguang-download",
+                            onClick = onResetDirectory,
+                            trailing = { SettingsChevron() }
                         )
                     }
                 }
             }
+        }
 
-            SettingsSectionHeader(
-                icon = Icons.Default.Settings,
-                title = "并发设置"
-            )
-            SettingStepper(
-                label = "最大并行任务",
-                value = maxParallelTasks,
-                minValue = 1,
-                onValueChange = onMaxParallelChange
-            )
-            SettingStepper(
-                label = "分片下载线程",
-                value = downloadThreadCount,
-                minValue = 1,
-                onValueChange = onDownloadThreadChange
-            )
+        item {
+            SettingsCategory(title = "下载性能") {
+                SettingsGroup {
+                    SettingStepper(
+                        icon = Icons.Default.Settings,
+                        label = "最大并行任务",
+                        summary = "同时运行的下载任务数量",
+                        value = state.maxParallelTasks,
+                        minValue = 1,
+                        onValueChange = onMaxParallelChange
+                    )
+                    SettingsDivider()
+                    SettingStepper(
+                        icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+                        label = "分片下载线程",
+                        summary = "单个 HLS 任务的并发线程数",
+                        value = state.downloadThreadCount,
+                        minValue = 1,
+                        onValueChange = onDownloadThreadChange
+                    )
+                }
+            }
+        }
 
-            SettingsSectionHeader(
-                icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-                title = "下载偏好"
-            )
-            SettingRow(label = "输出格式", value = "单个 MP4")
-            SettingRow(label = "清晰度", value = "自动选择最高")
-            SettingRow(label = "任务方式", value = "队列 + 前台服务")
-
-            SettingsSectionHeader(
-                icon = Icons.Default.Info,
-                title = "兼容范围"
-            )
-            SettingRow(label = "支持", value = "普通 / AES-128 TS-HLS")
-            SettingRow(label = "暂不支持", value = "SAMPLE-AES、fMP4、BYTERANGE")
-            SettingRow(label = "请求头", value = "暂不自定义")
-
-            SettingsSectionHeader(
-                icon = Icons.Default.SystemUpdate,
-                title = "应用更新"
-            )
-            UpdateSettingsRow(
-                state = updateState,
-                onCheckUpdate = onCheckUpdate,
-                onDownloadUpdate = onDownloadUpdate,
-                onInstallUpdate = onInstallUpdate
-            )
+        item {
+            SettingsCategory(title = "应用") {
+                SettingsGroup {
+                    UpdateSettingsRow(
+                        state = updateState,
+                        onCheckUpdate = onCheckUpdate,
+                        onDownloadUpdate = onDownloadUpdate,
+                        onInstallUpdate = onInstallUpdate
+                    )
+                    SettingsDivider()
+                    SettingsItem(
+                        icon = Icons.Default.Info,
+                        title = "下载能力",
+                        summary = "输出格式、清晰度与兼容范围",
+                        onClick = { showDownloadCapabilities = true },
+                        trailing = { SettingsChevron() }
+                    )
+                }
+            }
         }
     }
+
+    if (showDownloadCapabilities) {
+        DownloadCapabilitiesDialog(onDismiss = { showDownloadCapabilities = false })
+    }
+}
+
+@Composable
+private fun SettingsCategory(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+        content()
+    }
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column { content() }
+    }
+}
+
+@Composable
+private fun SettingsItem(
+    icon: ImageVector,
+    title: String,
+    summary: String,
+    modifier: Modifier = Modifier,
+    summaryColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    val itemModifier = modifier
+        .fillMaxWidth()
+        .heightIn(min = 64.dp)
+        .let { base -> if (onClick != null) base.clickable(onClick = onClick) else base }
+        .padding(horizontal = 10.dp, vertical = 8.dp)
+    Row(
+        modifier = itemModifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = summary,
+                color = summaryColor,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun SettingsChevron() {
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(18.dp)
+    )
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 54.dp),
+        color = MaterialTheme.colorScheme.outline
+    )
 }
 
 @Composable
@@ -894,61 +962,61 @@ private fun UpdateSettingsRow(
     onDownloadUpdate: () -> Unit,
     onInstallUpdate: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "当前版本 ${state.currentVersionName}",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 11.sp,
-                    lineHeight = 13.sp
-                )
-                Text(
-                    text = updateStatusText(state),
-                    color = if (state.status == UpdateStatus.Error) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    fontSize = 10.sp,
-                    lineHeight = 12.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            when (state.status) {
-                UpdateStatus.Available -> FilledTonalButton(
-                    onClick = onDownloadUpdate,
-                    modifier = Modifier.height(32.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                ) { Text("更新", fontSize = 10.sp) }
-                UpdateStatus.ReadyToInstall -> Button(
-                    onClick = onInstallUpdate,
-                    modifier = Modifier.height(32.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                ) { Text("安装", fontSize = 10.sp) }
-                else -> IconButton(
-                    onClick = onCheckUpdate,
-                    enabled = state.status != UpdateStatus.Checking && state.status != UpdateStatus.Downloading,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "检查更新",
-                        modifier = Modifier.size(17.dp)
+    Column {
+        SettingsItem(
+            icon = Icons.Default.SystemUpdate,
+            title = "应用更新",
+            summary = "当前 ${state.currentVersionName} · ${updateStatusText(state)}",
+            summaryColor = if (state.status == UpdateStatus.Error) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            trailing = {
+                when (state.status) {
+                    UpdateStatus.Checking -> CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
                     )
+                    UpdateStatus.Downloading -> Text(
+                        text = "${(state.downloadProgress * 100).toInt()}%",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    UpdateStatus.Available -> FilledTonalButton(
+                        onClick = onDownloadUpdate,
+                        modifier = Modifier.height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                    ) { Text("下载", fontSize = 11.sp) }
+                    UpdateStatus.ReadyToInstall -> Button(
+                        onClick = onInstallUpdate,
+                        modifier = Modifier.height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                    ) { Text("安装", fontSize = 11.sp) }
+                    else -> IconButton(
+                        onClick = onCheckUpdate,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = if (state.status == UpdateStatus.Error) {
+                                "重新检查更新"
+                            } else {
+                                "检查更新"
+                            },
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                 }
             }
-        }
+        )
         if (state.status == UpdateStatus.Downloading) {
             LinearProgressIndicator(
                 progress = { state.downloadProgress },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(start = 54.dp, end = 12.dp, bottom = 8.dp)
                     .height(3.dp)
             )
         }
@@ -963,6 +1031,97 @@ private fun updateStatusText(state: UpdateUiState): String = when (state.status)
     UpdateStatus.Downloading -> "正在下载 ${(state.downloadProgress * 100).toInt()}%"
     UpdateStatus.ReadyToInstall -> state.message ?: "安装包已下载"
     UpdateStatus.Error -> state.message ?: "更新失败"
+}
+
+@Composable
+private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .widthIn(max = 360.dp),
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 2.dp,
+            shadowElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "下载能力",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 15.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                CapabilityItem(label = "输出格式", value = "单个 MP4")
+                CapabilityItem(label = "清晰度", value = "自动选择最高")
+                CapabilityItem(label = "任务方式", value = "队列 + 前台服务")
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                CapabilityItem(label = "支持", value = "普通 / AES-128 TS-HLS")
+                CapabilityItem(label = "暂不支持", value = "SAMPLE-AES、fMP4、BYTERANGE")
+                CapabilityItem(label = "请求头", value = "暂不自定义")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapabilityItem(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 10.sp,
+            lineHeight = 13.sp
+        )
+        Text(
+            text = value,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp)
+        )
+    }
 }
 
 @Composable
@@ -992,29 +1151,6 @@ private fun UpdateAvailableDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } },
         confirmButton = { Button(onClick = onDownload) { Text("下载更新") } }
     )
-}
-
-@Composable
-private fun SettingsSectionHeader(
-    icon: ImageVector,
-    title: String
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(5.dp))
-        Text(
-            text = title,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            lineHeight = 14.sp
-        )
-    }
 }
 
 @Composable
@@ -1107,57 +1243,52 @@ private fun AppBottomBarItem(
 
 @Composable
 private fun SettingStepper(
+    icon: ImageVector,
     label: String,
+    summary: String,
     value: Int,
     minValue: Int,
     onValueChange: (Int) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(30.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 12.sp
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = { onValueChange(value - 1) },
-                enabled = value > minValue,
-                modifier = Modifier.size(30.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Remove,
-                    contentDescription = "减少",
-                    modifier = Modifier.size(18.dp)
+    SettingsItem(
+        icon = icon,
+        title = label,
+        summary = summary,
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { onValueChange(value - 1) },
+                    enabled = value > minValue,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "减少$label",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    text = value.toString(),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.widthIn(min = 28.dp, max = 56.dp)
                 )
-            }
-            Text(
-                text = value.toString(),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                lineHeight = 14.sp,
-                modifier = Modifier.widthIn(min = 26.dp, max = 64.dp)
-            )
-            IconButton(
-                onClick = { onValueChange(value + 1) },
-                modifier = Modifier.size(30.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "增加",
-                    modifier = Modifier.size(18.dp)
-                )
+                IconButton(
+                    onClick = { onValueChange(value + 1) },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "增加$label",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
-    }
+    )
 }
 
 @Composable
