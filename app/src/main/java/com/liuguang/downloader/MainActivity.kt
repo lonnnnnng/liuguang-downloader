@@ -18,6 +18,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -40,6 +44,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -52,6 +57,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -62,10 +68,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -77,19 +85,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -97,6 +108,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.liuguang.downloader.data.download.DownloadTaskState
 import com.liuguang.downloader.data.update.ApkUpdateInstaller
@@ -108,6 +120,7 @@ import com.liuguang.downloader.ui.DownloaderViewModel
 import com.liuguang.downloader.ui.UpdateViewModel
 import com.liuguang.downloader.ui.isSupportedDownloadUrl
 import com.liuguang.downloader.ui.theme.LiuguangDownloaderTheme
+import com.liuguang.downloader.ui.theme.downloaderPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -120,7 +133,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         latestLaunchPayload = intent?.downloadLaunchPayload()
         setContent {
-            LiuguangDownloaderTheme {
+            val darkTheme = isSystemInDarkTheme()
+            SideEffect {
+                // author: long - 系统栏图标必须跟随下载器主题，否则深色头部会让黑色状态图标失去可读性。
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+            LiuguangDownloaderTheme(darkTheme = darkTheme) {
                 DownloaderApp(
                     launchPayload = latestLaunchPayload,
                     onLaunchPayloadConsumed = { latestLaunchPayload = null }
@@ -147,7 +168,7 @@ private fun DownloaderApp(
     val updateState by updateViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
-    var selectedScreen by remember { mutableStateOf(AppScreen.Download) }
+    var selectedScreen by rememberSaveable { mutableStateOf(AppScreen.Download) }
     var openAddTaskDialogSignal by remember { mutableStateOf<Long?>(null) }
     var pendingDirectoryAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showExitDialog by remember { mutableStateOf(false) }
@@ -233,76 +254,66 @@ private fun DownloaderApp(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppHeader(selectedScreen)
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 14.dp)
+                    .padding(top = 8.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                ) {
-                    AppHeader(selectedScreen)
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp)
-                            .padding(top = 6.dp)
-                    ) {
-                        when (selectedScreen) {
-                            AppScreen.Download -> DownloadScreen(
-                                state = state,
-                                openAddTaskDialogSignal = openAddTaskDialogSignal,
-                                onAddTaskDialogSignalConsumed = { openAddTaskDialogSignal = null },
-                                onUrlChange = viewModel::updateUrl,
-                                onFileNameChange = viewModel::updateFileName,
-                                onReadClipboard = viewModel::refreshClipboard,
-                                onRefreshStorageInfo = viewModel::refreshStorageInfo,
-                                onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
-                                onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
-                                onPauseTask = viewModel::pauseTask,
-                                onCopyTaskUrl = viewModel::copyTaskUrl,
-                                onOpenTask = viewModel::openTask,
-                                onDeleteTask = viewModel::deleteTask,
-                                onRestartTask = { task -> runAfterDirectoryAuthorization { viewModel.restartTask(task) } }
-                            )
-                            AppScreen.Settings -> SettingsScreen(
-                                state = state,
-                                updateState = updateState,
-                                onChooseDirectory = { directoryLauncher.launch(null) },
-                                onResetDirectory = viewModel::resetDirectory,
-                                onMaxParallelChange = viewModel::setMaxParallelTasks,
-                                onDownloadThreadChange = viewModel::setDownloadThreadCount,
-                                onCheckUpdate = {
-                                    dismissedUpdateVersion = null
-                                    updateViewModel.checkForUpdates()
-                                },
-                                onDownloadUpdate = updateViewModel::downloadUpdate,
-                                onInstallUpdate = ::installUpdate
-                            )
-                        }
-                    }
+                when (selectedScreen) {
+                    AppScreen.Download -> DownloadScreen(
+                        state = state,
+                        openAddTaskDialogSignal = openAddTaskDialogSignal,
+                        onAddTaskDialogSignalConsumed = { openAddTaskDialogSignal = null },
+                        onUrlChange = viewModel::updateUrl,
+                        onFileNameChange = viewModel::updateFileName,
+                        onReadClipboard = viewModel::refreshClipboard,
+                        onRefreshStorageInfo = viewModel::refreshStorageInfo,
+                        onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
+                        onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
+                        onPauseTask = viewModel::pauseTask,
+                        onCopyTaskUrl = viewModel::copyTaskUrl,
+                        onOpenTask = viewModel::openTask,
+                        onDeleteTask = viewModel::deleteTask,
+                        onRestartTask = { task -> runAfterDirectoryAuthorization { viewModel.restartTask(task) } }
+                    )
+                    AppScreen.Settings -> SettingsScreen(
+                        state = state,
+                        updateState = updateState,
+                        onChooseDirectory = { directoryLauncher.launch(null) },
+                        onResetDirectory = viewModel::resetDirectory,
+                        onMaxParallelChange = viewModel::setMaxParallelTasks,
+                        onDownloadThreadChange = viewModel::setDownloadThreadCount,
+                        onCheckUpdate = {
+                            dismissedUpdateVersion = null
+                            updateViewModel.checkForUpdates()
+                        },
+                        onDownloadUpdate = updateViewModel::downloadUpdate,
+                        onInstallUpdate = ::installUpdate
+                    )
                 }
+            }
 
-                AppBottomBar(
-                    selectedScreen = selectedScreen,
-                    onSelectScreen = { selectedScreen = it }
-                )
+            AppBottomBar(
+                selectedScreen = selectedScreen,
+                onSelectScreen = { selectedScreen = it }
+            )
         }
     }
 
     if (showExitDialog) {
-        AlertDialog(
-            onDismissRequest = { showExitDialog = false },
-            icon = { Icon(Icons.Default.Info, contentDescription = null) },
-            title = { Text("退出流光下载器？") },
-            text = { Text("正在运行的下载任务会继续在后台执行。") },
-            dismissButton = {
-                TextButton(onClick = { showExitDialog = false }) { Text("取消") }
-            },
-            confirmButton = {
-                Button(onClick = { activity?.finish() }) { Text("退出") }
-            }
+        ConfirmActionDialog(
+            icon = Icons.Default.Info,
+            title = "退出流光下载器？",
+            message = "正在运行的下载任务会继续在后台执行。",
+            confirmLabel = "退出",
+            onDismiss = { showExitDialog = false },
+            onConfirm = { activity?.finish() }
         )
     }
 
@@ -398,21 +409,31 @@ private const val EXTRA_FILE_NAME = "com.liuguang.downloader.extra.FILE_NAME"
 
 @Composable
 private fun AppHeader(selectedScreen: AppScreen) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(MaterialTheme.downloaderPalette.shell)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
+        Text(
+            text = "LIUGUANG",
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 11.sp,
+            lineHeight = 13.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.4.sp
+        )
         Text(
             text = when (selectedScreen) {
                 AppScreen.Download -> "下载"
                 AppScreen.Settings -> "设置"
             },
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
-            fontWeight = FontWeight.Bold
+            fontSize = 22.sp,
+            lineHeight = 26.sp,
+            fontWeight = FontWeight.Black
         )
     }
 }
@@ -434,10 +455,16 @@ private fun DownloadScreen(
     onDeleteTask: (DownloadTaskUi) -> Unit,
     onRestartTask: (DownloadTaskUi) -> Unit
 ) {
-    var selectedFilter by remember { mutableStateOf(TaskFilter.All) }
+    var selectedFilter by rememberSaveable { mutableStateOf(TaskFilter.All) }
     var showAddTaskDialog by remember { mutableStateOf(false) }
     val filteredTasks = remember(state.tasks, selectedFilter) {
         state.tasks.filter(selectedFilter::matches)
+    }
+    val openNewTask = {
+        onUrlChange("")
+        onFileNameChange("")
+        onRefreshStorageInfo()
+        showAddTaskDialog = true
     }
 
     LaunchedEffect(openAddTaskDialogSignal) {
@@ -450,7 +477,7 @@ private fun DownloadScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             DownloadStatusTabs(
                 selectedFilter = selectedFilter,
@@ -458,47 +485,48 @@ private fun DownloadScreen(
                 onFilterSelected = { selectedFilter = it }
             )
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                contentPadding = PaddingValues(bottom = 68.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                items(filteredTasks, key = { it.id }) { task ->
-                    TaskCard(
-                        task = task,
-                        onStartTask = onStartTask,
-                        onPauseTask = onPauseTask,
-                        onCopyTaskUrl = onCopyTaskUrl,
-                        onOpenTask = onOpenTask,
-                        onDeleteTask = onDeleteTask,
-                        onRestartTask = onRestartTask
-                    )
+            if (filteredTasks.isEmpty()) {
+                DownloadEmptyState(
+                    filtered = state.tasks.isNotEmpty() && selectedFilter != TaskFilter.All,
+                    onShowAll = { selectedFilter = TaskFilter.All },
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    contentPadding = PaddingValues(bottom = 78.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    items(filteredTasks, key = { it.id }) { task ->
+                        TaskCard(
+                            task = task,
+                            onStartTask = onStartTask,
+                            onPauseTask = onPauseTask,
+                            onCopyTaskUrl = onCopyTaskUrl,
+                            onOpenTask = onOpenTask,
+                            onDeleteTask = onDeleteTask,
+                            onRestartTask = onRestartTask
+                        )
+                    }
                 }
             }
         }
 
-        Box(
+        FloatingActionButton(
+            onClick = openNewTask,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(14.dp)
-                .size(52.dp)
-                .shadow(elevation = 6.dp, shape = CircleShape, clip = false)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(role = Role.Button) {
-                    onUrlChange("")
-                    onFileNameChange("")
-                    onRefreshStorageInfo()
-                    showAddTaskDialog = true
-                },
-            contentAlignment = Alignment.Center
+                .size(52.dp),
+            shape = CircleShape,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
         ) {
             Icon(
                 Icons.Default.Add,
                 contentDescription = "新建下载任务",
-                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -520,6 +548,49 @@ private fun DownloadScreen(
 }
 
 @Composable
+private fun DownloadEmptyState(
+    filtered: Boolean,
+    onShowAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.downloaderPalette.surfaceSoft),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = if (filtered) "当前分类暂无任务" else "暂无下载任务",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        if (filtered) {
+            TextButton(onClick = onShowAll) {
+                Text("查看全部")
+            }
+        }
+    }
+}
+
+@Composable
 private fun AddTaskDialog(
     state: DownloaderUiState,
     onUrlChange: (String) -> Unit,
@@ -529,19 +600,25 @@ private fun AddTaskDialog(
     onCreateTask: () -> Unit
 ) {
     val valid = isSupportedDownloadUrl(state.url)
+    val showUrlError = state.url.isNotBlank() && !valid
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .widthIn(max = 360.dp),
+                .fillMaxWidth(0.92f)
+                .widthIn(max = 400.dp)
+                .heightIn(max = 680.dp)
+                .imePadding(),
             shape = MaterialTheme.shapes.medium,
-            tonalElevation = 2.dp,
-            shadowElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.dividerStrong)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -558,46 +635,51 @@ private fun AddTaskDialog(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "新建下载任务",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 18.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = FontWeight.Black
                         )
                     }
-                    TextButton(
+                    IconButton(
                         onClick = onReadClipboard,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.ContentPaste,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            contentDescription = "从剪贴板读取地址",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("剪贴板", fontSize = 11.sp)
                     }
                 }
 
                 OutlinedTextField(
                     value = state.url,
                     onValueChange = onUrlChange,
-                    label = { Text("m3u8 / MP4 地址", fontSize = 11.sp) },
+                    label = { Text("m3u8 / MP4 地址") },
                     singleLine = false,
                     minLines = 5,
                     maxLines = 5,
+                    isError = showUrlError,
+                    supportingText = if (showUrlError) {
+                        { Text("请输入有效的 HTTP(S) m3u8 或 MP4 地址") }
+                    } else {
+                        null
+                    },
                     shape = MaterialTheme.shapes.small,
-                    textStyle = MaterialTheme.typography.bodySmall,
+                    textStyle = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = state.fileName,
                     onValueChange = onFileNameChange,
-                    label = { Text("文件名", fontSize = 11.sp) },
-                    placeholder = { Text("默认使用时间戳", fontSize = 11.sp) },
+                    label = { Text("文件名") },
                     singleLine = false,
                     minLines = 3,
                     maxLines = 3,
                     shape = MaterialTheme.shapes.small,
-                    textStyle = MaterialTheme.typography.bodySmall,
+                    textStyle = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -609,23 +691,25 @@ private fun AddTaskDialog(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(
                         onClick = onDismiss,
                         shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
                     ) {
-                        Text("取消", fontSize = 11.sp)
+                        Text("取消", fontSize = 13.sp)
                     }
                     Button(
                         onClick = onCreateTask,
                         enabled = valid,
                         shape = MaterialTheme.shapes.small,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp)
                     ) {
-                        Text("确定", fontSize = 11.sp)
+                        Text("确定", fontSize = 13.sp)
                     }
                 }
             }
@@ -643,32 +727,32 @@ private fun StorageInfoRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .background(MaterialTheme.downloaderPalette.surfaceSoft)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        StorageInfoItem(label = "已用", value = used)
-        StorageInfoItem(label = "总容量", value = total)
-        StorageInfoItem(label = "剩余", value = available)
+        StorageInfoItem(label = "已用", value = used, modifier = Modifier.weight(1f))
+        StorageInfoItem(label = "总容量", value = total, modifier = Modifier.weight(1f))
+        StorageInfoItem(label = "剩余", value = available, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun StorageInfoItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun StorageInfoItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 12.sp
+            color = MaterialTheme.downloaderPalette.textTertiary,
+            fontSize = 11.sp,
+            lineHeight = 14.sp
         )
         Text(
             text = value.ifBlank { "-" },
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            lineHeight = 13.sp,
+            lineHeight = 16.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -701,46 +785,58 @@ private fun DownloadStatusTabs(
     onFilterSelected: (TaskFilter) -> Unit
 ) {
     val filters = TaskFilter.entries
-    Row(
+    val counts = remember(tasks) {
+        filters.associateWith { filter -> tasks.count(filter::matches) }
+    }
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-            .padding(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .height(40.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.downloaderPalette.surfaceSoft,
+        border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.divider),
+        tonalElevation = 0.dp
     ) {
-        filters.forEach { filter ->
-            val selected = selectedFilter == filter
-            val count = tasks.count(filter::matches)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(horizontal = 1.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(
-                        if (selected) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+        Row(
+            modifier = Modifier.padding(3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            filters.forEach { filter ->
+                val selected = selectedFilter == filter
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 1.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(if (selected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                        .semantics { this.selected = selected }
+                        .clickable(role = Role.Tab) { onFilterSelected(filter) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${filter.label}(${counts.getValue(filter)})",
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            Color.Transparent
-                        }
+                            MaterialTheme.downloaderPalette.textTertiary
+                        },
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center
                     )
-                    .clickable { onFilterSelected(filter) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "${filter.label}($count)",
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    fontSize = 9.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center
-                )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .width(18.dp)
+                            .height(2.dp)
+                            .background(
+                                if (selected) MaterialTheme.downloaderPalette.accent else Color.Transparent
+                            )
+                    )
+                }
             }
         }
     }
@@ -761,8 +857,8 @@ private fun SettingsScreen(
     var showDownloadCapabilities by remember { mutableStateOf(false) }
 
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(bottom = 18.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         item {
@@ -851,14 +947,14 @@ private fun SettingsScreen(
 
 @Composable
 private fun SettingsCategory(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.primary,
             fontSize = 11.sp,
-            lineHeight = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 2.dp)
+            lineHeight = 15.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
         content()
     }
@@ -870,7 +966,7 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.divider),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -890,45 +986,49 @@ private fun SettingsItem(
 ) {
     val itemModifier = modifier
         .fillMaxWidth()
-        .heightIn(min = 64.dp)
-        .let { base -> if (onClick != null) base.clickable(onClick = onClick) else base }
-        .padding(horizontal = 10.dp, vertical = 8.dp)
+        .heightIn(min = 68.dp)
+        .let { base ->
+            if (onClick != null) base.clickable(role = Role.Button, onClick = onClick) else base
+        }
+        .padding(horizontal = 12.dp, vertical = 9.dp)
     Row(
         modifier = itemModifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.downloaderPalette.surfaceSoft,
+            border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.divider),
+            tonalElevation = 0.dp
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
         }
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+                .padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = title,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 13.sp,
-                lineHeight = 16.sp,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = summary,
                 color = summaryColor,
-                fontSize = 10.sp,
-                lineHeight = 13.sp,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -943,15 +1043,15 @@ private fun SettingsChevron() {
         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(18.dp)
+        modifier = Modifier.size(20.dp)
     )
 }
 
 @Composable
 private fun SettingsDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(start = 54.dp),
-        color = MaterialTheme.colorScheme.outline
+        modifier = Modifier.padding(start = 60.dp),
+        color = MaterialTheme.downloaderPalette.divider
     )
 }
 
@@ -981,19 +1081,19 @@ private fun UpdateSettingsRow(
                     UpdateStatus.Downloading -> Text(
                         text = "${(state.downloadProgress * 100).toInt()}%",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     UpdateStatus.Available -> FilledTonalButton(
                         onClick = onDownloadUpdate,
                         modifier = Modifier.height(38.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) { Text("下载", fontSize = 11.sp) }
+                    ) { Text("下载", fontSize = 12.sp) }
                     UpdateStatus.ReadyToInstall -> Button(
                         onClick = onInstallUpdate,
                         modifier = Modifier.height(38.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) { Text("安装", fontSize = 11.sp) }
+                    ) { Text("安装", fontSize = 12.sp) }
                     else -> IconButton(
                         onClick = onCheckUpdate,
                         modifier = Modifier.size(44.dp)
@@ -1016,7 +1116,7 @@ private fun UpdateSettingsRow(
                 progress = { state.downloadProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 54.dp, end = 12.dp, bottom = 8.dp)
+                    .padding(start = 60.dp, end = 14.dp, bottom = 10.dp)
                     .height(3.dp)
             )
         }
@@ -1038,16 +1138,17 @@ private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .widthIn(max = 360.dp),
+                .fillMaxWidth(0.92f)
+                .widthIn(max = 400.dp),
             shape = MaterialTheme.shapes.medium,
-            tonalElevation = 2.dp,
-            shadowElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.dividerStrong)
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1065,9 +1166,9 @@ private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
                         Text(
                             text = "下载能力",
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.sp,
-                            lineHeight = 18.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 18.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = FontWeight.Black
                         )
                     }
                     IconButton(
@@ -1077,7 +1178,7 @@ private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -1105,14 +1206,14 @@ private fun CapabilityItem(label: String, value: String) {
         Text(
             text = label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 13.sp
+            fontSize = 11.sp,
+            lineHeight = 15.sp
         )
         Text(
             text = value,
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 11.sp,
-            lineHeight = 14.sp,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.End,
             maxLines = 2,
@@ -1121,6 +1222,106 @@ private fun CapabilityItem(label: String, value: String) {
                 .weight(1f)
                 .padding(start = 16.dp)
         )
+    }
+}
+
+@Composable
+private fun ConfirmActionDialog(
+    icon: ImageVector,
+    title: String,
+    message: String,
+    confirmLabel: String,
+    destructive: Boolean = false,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .widthIn(max = 340.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.dividerStrong),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(40.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (destructive) {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+                        } else {
+                            MaterialTheme.downloaderPalette.surfaceSoft
+                        },
+                        tonalElevation = 0.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (destructive) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 17.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                    ) {
+                        Text("取消", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.height(40.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (destructive) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        ),
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp)
+                    ) {
+                        Text(confirmLabel, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1158,16 +1359,17 @@ private fun AppBottomBar(
     selectedScreen: AppScreen,
     onSelectScreen: (AppScreen) -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
             .navigationBarsPadding()
     ) {
+        HorizontalDivider(color = MaterialTheme.downloaderPalette.divider)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
+                .height(48.dp)
                 .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 3.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
@@ -1200,12 +1402,13 @@ private fun AppBottomBarItem(
     val contentColor = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+        MaterialTheme.downloaderPalette.textTertiary
     }
     Surface(
         onClick = onClick,
         modifier = modifier
-            .fillMaxHeight(),
+            .fillMaxHeight()
+            .semantics { this.selected = selected },
         color = Color.Transparent,
         contentColor = contentColor,
         shape = MaterialTheme.shapes.medium
@@ -1220,7 +1423,9 @@ private fun AppBottomBarItem(
                     .width(18.dp)
                     .height(2.dp)
                     .clip(MaterialTheme.shapes.small)
-                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .background(
+                        if (selected) MaterialTheme.downloaderPalette.accent else Color.Transparent
+                    )
             )
             Spacer(modifier = Modifier.height(3.dp))
             Icon(
@@ -1255,7 +1460,12 @@ private fun SettingStepper(
         title = label,
         summary = summary,
         trailing = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.downloaderPalette.surfaceSoft),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(
                     onClick = { onValueChange(value - 1) },
                     enabled = value > minValue,
@@ -1270,7 +1480,7 @@ private fun SettingStepper(
                 Text(
                     text = value.toString(),
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     lineHeight = 16.sp,
@@ -1292,29 +1502,32 @@ private fun SettingStepper(
 }
 
 @Composable
-private fun SettingRow(label: String, value: String) {
+private fun SettingRow(label: String, value: String, valueMaxLines: Int = 1) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(22.dp),
+            .heightIn(min = 28.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 12.sp
+            color = MaterialTheme.downloaderPalette.textTertiary,
+            fontSize = 11.sp,
+            lineHeight = 15.sp
         )
         Text(
             text = value,
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 10.sp,
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.Medium,
-            lineHeight = 12.sp,
-            maxLines = 1,
+            lineHeight = 16.sp,
+            maxLines = valueMaxLines,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 12.dp)
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp)
         )
     }
 }
@@ -1332,21 +1545,23 @@ private fun TaskCard(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    val palette = MaterialTheme.downloaderPalette
     val statusColor = when (task.state) {
         DownloadTaskState.Failed -> MaterialTheme.colorScheme.error
         DownloadTaskState.Canceled,
-        DownloadTaskState.Paused -> MaterialTheme.colorScheme.onSurfaceVariant
-        DownloadTaskState.Completed -> MaterialTheme.colorScheme.primary
-        DownloadTaskState.Queued,
+        DownloadTaskState.Paused -> palette.textTertiary
+        DownloadTaskState.Completed -> palette.success
+        DownloadTaskState.Queued -> palette.warning
         DownloadTaskState.Running -> MaterialTheme.colorScheme.primary
     }
     val statusBackground = when (task.state) {
         DownloadTaskState.Failed -> MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
-        DownloadTaskState.Completed,
-        DownloadTaskState.Queued,
+        DownloadTaskState.Completed -> palette.successSoft
+        DownloadTaskState.Queued -> palette.warning.copy(alpha = 0.10f)
         DownloadTaskState.Running -> MaterialTheme.colorScheme.primaryContainer
         DownloadTaskState.Canceled,
-        DownloadTaskState.Paused -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
+        DownloadTaskState.Paused -> palette.surfaceSoft
     }
 
     Box {
@@ -1355,44 +1570,89 @@ private fun TaskCard(
                 onClick = { showDetails = true },
                 onLongClick = { menuExpanded = true }
             ),
-            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp)
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = task.title,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        lineHeight = 14.sp,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = task.status,
                         color = statusColor,
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.small)
                             .background(statusBackground)
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
                     )
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "更多操作",
+                                tint = palette.textTertiary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        TaskActionMenu(
+                            task = task,
+                            expanded = menuExpanded,
+                            onDismiss = { menuExpanded = false },
+                            onStartTask = onStartTask,
+                            onPauseTask = onPauseTask,
+                            onShowDetails = { showDetails = true },
+                            onCopyTaskUrl = onCopyTaskUrl,
+                            onOpenTask = onOpenTask,
+                            onDeleteTask = { showDeleteConfirmation = true },
+                            onRestartTask = onRestartTask
+                        )
+                    }
                 }
                 Text(
                     text = task.url,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp,
-                    lineHeight = 12.sp,
+                    color = palette.textTertiary,
+                    fontSize = 10.5.sp,
+                    lineHeight = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (task.state == DownloadTaskState.Running) {
+                    if (task.status == "合并 MP4") {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { task.progress.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    }
+                }
                 when {
                     task.state == DownloadTaskState.Running && task.totalSegments > 0 -> {
                         DownloadStatsRow(task = task)
@@ -1401,9 +1661,9 @@ private fun TaskCard(
                         CompletedStatsRow(task = task)
                         Text(
                             text = task.detail,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 9.sp,
-                            lineHeight = 12.sp,
+                            color = palette.textTertiary,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1411,29 +1671,20 @@ private fun TaskCard(
                     else -> {
                         Text(
                             text = task.detail,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 9.sp,
-                            lineHeight = 12.sp,
-                            maxLines = 1,
+                            color = if (task.state == DownloadTaskState.Failed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                palette.textTertiary
+                            },
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp,
+                            maxLines = if (task.state == DownloadTaskState.Failed) 2 else 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
         }
-
-        TaskActionMenu(
-            task = task,
-            expanded = menuExpanded,
-            onDismiss = { menuExpanded = false },
-            onStartTask = onStartTask,
-            onPauseTask = onPauseTask,
-            onShowDetails = { showDetails = true },
-            onCopyTaskUrl = onCopyTaskUrl,
-            onOpenTask = onOpenTask,
-            onDeleteTask = onDeleteTask,
-            onRestartTask = onRestartTask
-        )
     }
 
     if (showDetails) {
@@ -1444,6 +1695,21 @@ private fun TaskCard(
             onPauseTask = onPauseTask,
             onCopyTaskUrl = onCopyTaskUrl,
             onOpenTask = onOpenTask
+        )
+    }
+
+    if (showDeleteConfirmation) {
+        ConfirmActionDialog(
+            icon = Icons.Default.Delete,
+            title = "删除下载任务？",
+            message = task.title,
+            confirmLabel = "删除",
+            destructive = true,
+            onDismiss = { showDeleteConfirmation = false },
+            onConfirm = {
+                showDeleteConfirmation = false
+                onDeleteTask(task)
+            }
         )
     }
 }
@@ -1517,9 +1783,9 @@ private fun DownloadStatItem(
 ) {
     Text(
         text = "$label $value",
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 8.sp,
-        lineHeight = 10.sp,
+        color = MaterialTheme.downloaderPalette.textTertiary,
+        fontSize = 9.5.sp,
+        lineHeight = 13.sp,
         textAlign = TextAlign.Start,
         modifier = modifier,
         maxLines = 1,
@@ -1543,6 +1809,9 @@ private fun TaskActionMenu(
     val canStart = task.canStart()
     val canPause = task.canPause()
     val canOpen = task.state == DownloadTaskState.Completed && task.outputUri != null
+    val canRestart = task.state == DownloadTaskState.Completed ||
+        task.state == DownloadTaskState.Failed ||
+        task.state == DownloadTaskState.Canceled
 
     DropdownMenu(
         expanded = expanded,
@@ -1594,20 +1863,29 @@ private fun TaskActionMenu(
                 }
             )
         }
+        if (canRestart) {
+            DropdownMenuItem(
+                text = { Text("重新下载", fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Default.Replay, contentDescription = null) },
+                onClick = {
+                    onDismiss()
+                    onRestartTask(task)
+                }
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.downloaderPalette.divider)
         DropdownMenuItem(
-            text = { Text("删除", fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            text = { Text("删除", color = MaterialTheme.colorScheme.error, fontSize = 13.sp) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
             onClick = {
                 onDismiss()
                 onDeleteTask(task)
-            }
-        )
-        DropdownMenuItem(
-            text = { Text("重新下载", fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Default.Replay, contentDescription = null) },
-            onClick = {
-                onDismiss()
-                onRestartTask(task)
             }
         )
     }
@@ -1628,23 +1906,52 @@ private fun TaskDetailsDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .widthIn(max = 380.dp),
+                .fillMaxWidth(0.92f)
+                .widthIn(max = 400.dp)
+                .heightIn(max = 680.dp),
             shape = MaterialTheme.shapes.medium,
-            tonalElevation = 6.dp,
-            color = MaterialTheme.colorScheme.surface
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.dividerStrong)
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = task.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = task.title,
+                        fontSize = 18.sp,
+                        lineHeight = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                if (task.state == DownloadTaskState.Running) {
+                    LinearProgressIndicator(
+                        progress = { task.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                }
                 SettingRow(label = "状态", value = task.status)
                 SettingRow(label = "进度", value = "${(task.progress.coerceIn(0f, 1f) * 100).toInt()}%")
                 if (task.totalSegments > 0) {
@@ -1659,31 +1966,36 @@ private fun TaskDetailsDialog(
                 SettingRow(label = "平均速度", value = formatAverageSpeed(task.downloadedBytes, task.elapsedMillis))
                 SettingRow(label = "开始时间", value = formatBeijingTime(task.startedAtMillis))
                 SettingRow(label = "完成时间", value = formatBeijingTime(task.finishedAtMillis))
-                SettingRow(label = "详情", value = task.detail)
+                SettingRow(label = "详情", value = task.detail, valueMaxLines = 2)
                 task.outputLabel?.let { output ->
-                    SettingRow(label = "输出", value = output)
+                    SettingRow(label = "输出", value = output, valueMaxLines = 2)
                 }
-                Text(
-                    text = task.url,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
+                HorizontalDivider(color = MaterialTheme.downloaderPalette.divider)
+                SelectionContainer {
+                    Text(
+                        text = task.url,
+                        color = MaterialTheme.downloaderPalette.textTertiary,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (canStart) {
                         TextButton(
                             onClick = {
                                 onStartTask(task)
                                 onDismiss()
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                            Text(task.startActionLabel(), fontSize = 12.sp)
+                            },
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Text(task.startActionLabel(), fontSize = 13.sp)
                         }
                     }
                     if (canPause) {
@@ -1692,29 +2004,32 @@ private fun TaskDetailsDialog(
                                 onPauseTask(task)
                                 onDismiss()
                             },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                         ) {
-                            Text("暂停", fontSize = 12.sp)
+                            Text("暂停", fontSize = 13.sp)
                         }
                     }
-                    TextButton(
+                    IconButton(
                         onClick = { onCopyTaskUrl(task) },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Text("复制链接", fontSize = 12.sp)
-                    }
-                    TextButton(
-                        onClick = onDismiss,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("关闭", fontSize = 12.sp)
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制下载链接",
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     if (canOpen) {
                         Button(
-                            onClick = { onOpenTask(task) },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            onClick = {
+                                onOpenTask(task)
+                                onDismiss()
+                            },
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
                         ) {
-                            Text("打开", fontSize = 12.sp)
+                            Text("打开", fontSize = 13.sp)
                         }
                     }
                 }
@@ -1748,6 +2063,7 @@ private fun SurfaceCard(
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = cardShape,
+        border = BorderStroke(1.dp, MaterialTheme.downloaderPalette.divider),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = modifier
