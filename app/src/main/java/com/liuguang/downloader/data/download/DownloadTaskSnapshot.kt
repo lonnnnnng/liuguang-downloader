@@ -28,5 +28,8 @@ data class DownloadTaskSnapshot(
     val elapsedMillis: Long = 0L,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val startedAtMillis: Long? = null,
-    val finishedAtMillis: Long? = null
+    val finishedAtMillis: Long? = null,
+    val failureCategory: DownloadFailureCategory? = null,
+    val retryAttempt: Int = 0,
+    val lastFailureAtMillis: Long? = null
 )

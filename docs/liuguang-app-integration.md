@@ -1,6 +1,6 @@
 # 流光 App 唤起下载器协议
 
-适用版本：v1.0.9
+适用版本：main（v1.0.10）
 
 ## Deep link 格式
 
@@ -62,3 +62,38 @@ Intent(Intent.ACTION_VIEW).apply {
 下载器按以下顺序读取链接：deep link 的 `url`、`com.liuguang.downloader.extra.DOWNLOAD_URL`、`com.liuguang.downloader.extra.M3U8_URL`、`Intent.EXTRA_TEXT`、`Intent.dataString`。文件名按 `title` / `name` / `fileName`，随后 `com.liuguang.downloader.extra.FILE_NAME`、`Intent.EXTRA_TITLE` 读取。
 
 也兼容 `ACTION_SEND` + `text/plain` 分享链接。对接流光时仍推荐使用上述显式包名的 deep link，避免其他应用接收或触发系统选择器。
+
+## 批量任务
+
+流光需要一次发送多集时，推荐使用显式 Intent 的 JSON extra：
+
+```kotlin
+val itemsJson = JSONArray().apply {
+    episodes.forEach { episode ->
+        put(JSONObject().apply {
+            put("url", episode.downloadUrl)
+            put("title", episode.displayName)
+        })
+    }
+}.toString()
+
+val intent = Intent(Intent.ACTION_VIEW).apply {
+    setPackage("com.liuguang.downloader")
+    putExtra("com.liuguang.downloader.extra.DOWNLOAD_ITEMS_JSON", itemsJson)
+}
+startActivity(intent)
+```
+
+JSON 格式：
+
+```json
+[
+  {"url":"https://example.com/episode-1/index.m3u8","title":"剧名-第01集"},
+  {"url":"https://example.com/episode-2/index.m3u8","title":"剧名-第02集"}
+]
+```
+
+- 最多 20 条，总 JSON 文本不超过 64 KB。
+- 每条 `url` 必须是受支持的 HTTP/HTTPS m3u8 或 MP4 地址，最长 8192 字符。
+- `title` 可选，最长保留 200 字符。
+- 下载器会统一展示预检结果，仍需用户点击“确定”，不会由外部 Intent 静默开始。

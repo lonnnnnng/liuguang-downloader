@@ -54,7 +54,10 @@ object DownloadTaskStore {
                 detail = "正在创建下载任务",
                 isRunning = true,
                 isFailed = false,
-                startedAtMillis = current.startedAtMillis ?: now
+                startedAtMillis = current.startedAtMillis ?: now,
+                failureCategory = null,
+                retryAttempt = 0,
+                lastFailureAtMillis = null
             )
         }
     }
@@ -67,15 +70,34 @@ object DownloadTaskStore {
         updateTask(id) { current -> current.applyProgress(progress) }
     }
 
-    fun failTask(id: String, message: String) {
+    fun failTask(id: String, failure: DownloadFailureInfo) {
+        val now = System.currentTimeMillis()
         updateTask(id) { current ->
             current.copy(
                 state = DownloadTaskState.Failed,
                 status = "失败",
-                detail = message,
+                detail = failure.message,
                 isRunning = false,
                 isFailed = true,
-                finishedAtMillis = System.currentTimeMillis()
+                finishedAtMillis = now,
+                failureCategory = failure.category,
+                lastFailureAtMillis = now
+            )
+        }
+    }
+
+    fun markTaskRetrying(id: String, failure: DownloadFailureInfo, attempt: Int, delayMillis: Long) {
+        val now = System.currentTimeMillis()
+        updateTask(id) { current ->
+            current.copy(
+                state = DownloadTaskState.Running,
+                status = "等待重试",
+                detail = "${failure.message} · ${delayMillis / 1_000} 秒后进行第 $attempt 次重试",
+                isRunning = true,
+                isFailed = false,
+                failureCategory = failure.category,
+                retryAttempt = attempt,
+                lastFailureAtMillis = now
             )
         }
     }
@@ -88,6 +110,20 @@ object DownloadTaskStore {
                 detail = "任务已暂停，点击继续会继续下载",
                 isRunning = false,
                 isFailed = false,
+                finishedAtMillis = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun interruptTask(id: String) {
+        updateTask(id) { current ->
+            current.copy(
+                state = DownloadTaskState.Paused,
+                status = "已中断",
+                detail = "下载进程已中断，点击继续会从已有缓存恢复",
+                isRunning = false,
+                isFailed = false,
+                speedBytesPerSecond = 0L,
                 finishedAtMillis = System.currentTimeMillis()
             )
         }
@@ -216,6 +252,9 @@ object DownloadTaskStore {
                 outputUri = progress.outputUri,
                 isRunning = false,
                 isFailed = false,
+                failureCategory = null,
+                retryAttempt = 0,
+                lastFailureAtMillis = null,
                 completedSegments = progress.completedSegments,
                 totalSegments = progress.totalSegments,
                 downloadedBytes = progress.downloadedBytes,
@@ -282,6 +321,9 @@ object DownloadTaskStore {
                         .put("createdAtMillis", task.createdAtMillis)
                         .putNullable("startedAtMillis", task.startedAtMillis)
                         .putNullable("finishedAtMillis", task.finishedAtMillis)
+                        .putNullable("failureCategory", task.failureCategory?.name)
+                        .put("retryAttempt", task.retryAttempt)
+                        .putNullable("lastFailureAtMillis", task.lastFailureAtMillis)
                 )
             }
         }
@@ -326,31 +368,13 @@ object DownloadTaskStore {
             elapsedMillis = optLong("elapsedMillis", 0L),
             createdAtMillis = optLong("createdAtMillis", System.currentTimeMillis()),
             startedAtMillis = optNullableLong("startedAtMillis"),
-            finishedAtMillis = optNullableLong("finishedAtMillis")
+            finishedAtMillis = optNullableLong("finishedAtMillis"),
+            failureCategory = optNullableString("failureCategory")?.let { value ->
+                runCatching { DownloadFailureCategory.valueOf(value) }.getOrNull()
+            },
+            retryAttempt = optInt("retryAttempt", 0),
+            lastFailureAtMillis = optNullableLong("lastFailureAtMillis")
         )
-    }
-
-    private fun DownloadTaskSnapshot.restoredForColdStart(): DownloadTaskSnapshot {
-        return if (state == DownloadTaskState.Running || state == DownloadTaskState.Queued || isRunning) {
-            copy(
-                state = DownloadTaskState.Paused,
-                status = "已暂停",
-                detail = "任务中断，点击继续会继续下载",
-                isRunning = false,
-                isFailed = false,
-                speedBytesPerSecond = 0L
-            )
-        } else {
-            copy(
-                isRunning = false,
-                speedBytesPerSecond = 0L,
-                detail = if (state == DownloadTaskState.Paused && detail.contains("开始后")) {
-                    "任务已暂停，点击继续会继续下载"
-                } else {
-                    detail
-                }
-            )
-        }
     }
 
     private fun DownloadTaskState.defaultStatus(): String {
@@ -382,4 +406,27 @@ object DownloadTaskStore {
 
     private const val PREFERENCES_NAME = "download_task_store"
     private const val KEY_TASKS_JSON = "tasks_json"
+}
+
+internal fun DownloadTaskSnapshot.restoredForColdStart(): DownloadTaskSnapshot {
+    return if (state == DownloadTaskState.Running || state == DownloadTaskState.Queued || isRunning) {
+        copy(
+            state = DownloadTaskState.Paused,
+            status = "已中断",
+            detail = "下载进程已中断，点击继续会从已有缓存恢复",
+            isRunning = false,
+            isFailed = false,
+            speedBytesPerSecond = 0L
+        )
+    } else {
+        copy(
+            isRunning = false,
+            speedBytesPerSecond = 0L,
+            detail = if (state == DownloadTaskState.Paused && detail.contains("开始后")) {
+                "任务已暂停，点击继续会继续下载"
+            } else {
+                detail
+            }
+        )
+    }
 }

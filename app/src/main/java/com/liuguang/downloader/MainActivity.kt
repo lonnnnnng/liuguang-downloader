@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -92,6 +93,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -115,16 +117,21 @@ import com.liuguang.downloader.data.update.ApkUpdateInstaller
 import com.liuguang.downloader.data.update.UpdateStatus
 import com.liuguang.downloader.data.update.UpdateUiState
 import com.liuguang.downloader.ui.DownloadTaskUi
+import com.liuguang.downloader.ui.DownloadPreflightStatus
+import com.liuguang.downloader.ui.DownloadDraftItem
 import com.liuguang.downloader.ui.DownloaderUiState
 import com.liuguang.downloader.ui.DownloaderViewModel
 import com.liuguang.downloader.ui.UpdateViewModel
 import com.liuguang.downloader.ui.isSupportedDownloadUrl
+import com.liuguang.downloader.ui.isSupportedDownloadText
+import com.liuguang.downloader.ui.parseDownloadUrls
 import com.liuguang.downloader.ui.theme.LiuguangDownloaderTheme
 import com.liuguang.downloader.ui.theme.downloaderPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import org.json.JSONArray
 
 class MainActivity : ComponentActivity() {
     private var latestLaunchPayload by mutableStateOf<DownloadLaunchPayload?>(null)
@@ -230,10 +237,7 @@ private fun DownloaderApp(
 
     LaunchedEffect(launchPayload?.requestId) {
         if (launchPayload != null) {
-            viewModel.setDownloadDraft(
-                url = launchPayload.url,
-                fileName = launchPayload.fileName.orEmpty()
-            )
+            viewModel.setDownloadDraftItems(launchPayload.items)
             selectedScreen = AppScreen.Download
             openAddTaskDialogSignal = launchPayload.requestId
             onLaunchPayloadConsumed()
@@ -255,13 +259,12 @@ private fun DownloaderApp(
         color = MaterialTheme.colorScheme.background
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            AppHeader(selectedScreen)
-
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
+                    .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(horizontal = 14.dp)
                     .padding(top = 8.dp)
             ) {
@@ -273,6 +276,7 @@ private fun DownloaderApp(
                         onUrlChange = viewModel::updateUrl,
                         onFileNameChange = viewModel::updateFileName,
                         onReadClipboard = viewModel::refreshClipboard,
+                        onCheckDownload = viewModel::checkDownload,
                         onRefreshStorageInfo = viewModel::refreshStorageInfo,
                         onCreateTask = { runAfterDirectoryAuthorization(viewModel::startDownload) },
                         onStartTask = { task -> runAfterDirectoryAuthorization { viewModel.startTask(task) } },
@@ -366,17 +370,22 @@ private enum class AppScreen {
 }
 
 private data class DownloadLaunchPayload(
-    val url: String,
-    val fileName: String?,
+    val items: List<DownloadDraftItem>,
     val requestId: Long = System.nanoTime()
 )
 
 private fun Intent.downloadLaunchPayload(): DownloadLaunchPayload? {
+    if (action != Intent.ACTION_VIEW && action != Intent.ACTION_SEND) return null
+    getStringExtra(EXTRA_DOWNLOAD_ITEMS_JSON)
+        ?.parseDownloadItemsJson()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { return DownloadLaunchPayload(items = it) }
+
     val deepLinkUrl = data
-        ?.takeIf { it.scheme == "liuguangdl" && it.host == "download" }
+        ?.takeIf(Uri::isDownloaderDeepLink)
         ?.getQueryParameter("url")
     val deepLinkFileName = data
-        ?.takeIf { it.scheme == "liuguangdl" && it.host == "download" }
+        ?.takeIf(Uri::isDownloaderDeepLink)
         ?.let { uri ->
             uri.getQueryParameter("title")
                 ?: uri.getQueryParameter("name")
@@ -391,7 +400,8 @@ private fun Intent.downloadLaunchPayload(): DownloadLaunchPayload? {
     )
     val url = candidates
         .map(String::trim)
-        .firstOrNull(::isSupportedDownloadUrl)
+        .filter { it.length <= MAX_INCOMING_TEXT_LENGTH }
+        .firstOrNull(::isSupportedDownloadText)
         ?: return null
     val fileName = listOfNotNull(
         deepLinkFileName,
@@ -400,43 +410,45 @@ private fun Intent.downloadLaunchPayload(): DownloadLaunchPayload? {
     )
         .map(String::trim)
         .firstOrNull { it.isNotBlank() }
-    return DownloadLaunchPayload(url = url, fileName = fileName)
+    val urls = parseDownloadUrls(url)
+    val items = urls.mapIndexed { index, itemUrl ->
+        val resolvedName = when {
+            fileName.isNullOrBlank() -> ""
+            urls.size == 1 -> fileName
+            else -> "$fileName-${(index + 1).toString().padStart(2, '0')}"
+        }
+        DownloadDraftItem(url = itemUrl, fileName = resolvedName)
+    }
+    return DownloadLaunchPayload(items = items)
+}
+
+private fun Uri.isDownloaderDeepLink(): Boolean {
+    return scheme == "liuguangdl" && host == "download" && path == "/add"
+}
+
+private fun String.parseDownloadItemsJson(): List<DownloadDraftItem>? {
+    if (length > MAX_INCOMING_TEXT_LENGTH) return null
+    return runCatching {
+        val array = JSONArray(this)
+        require(array.length() in 1..MAX_INCOMING_BATCH_ITEMS)
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            val url = item.getString("url").trim()
+            val title = item.optString("title").trim().take(MAX_INCOMING_TITLE_LENGTH)
+            require(url.length <= MAX_INCOMING_URL_LENGTH && isSupportedDownloadUrl(url))
+            DownloadDraftItem(url = url, fileName = title)
+        }
+    }.getOrNull()
 }
 
 private const val EXTRA_M3U8_URL = "com.liuguang.downloader.extra.M3U8_URL"
 private const val EXTRA_DOWNLOAD_URL = "com.liuguang.downloader.extra.DOWNLOAD_URL"
 private const val EXTRA_FILE_NAME = "com.liuguang.downloader.extra.FILE_NAME"
-
-@Composable
-private fun AppHeader(selectedScreen: AppScreen) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.downloaderPalette.shell)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = "LIUGUANG",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 11.sp,
-            lineHeight = 13.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.4.sp
-        )
-        Text(
-            text = when (selectedScreen) {
-                AppScreen.Download -> "下载"
-                AppScreen.Settings -> "设置"
-            },
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
-            fontWeight = FontWeight.Black
-        )
-    }
-}
+private const val EXTRA_DOWNLOAD_ITEMS_JSON = "com.liuguang.downloader.extra.DOWNLOAD_ITEMS_JSON"
+private const val MAX_INCOMING_BATCH_ITEMS = 20
+private const val MAX_INCOMING_URL_LENGTH = 8_192
+private const val MAX_INCOMING_TITLE_LENGTH = 200
+private const val MAX_INCOMING_TEXT_LENGTH = 65_536
 
 @Composable
 private fun DownloadScreen(
@@ -446,6 +458,7 @@ private fun DownloadScreen(
     onUrlChange: (String) -> Unit,
     onFileNameChange: (String) -> Unit,
     onReadClipboard: () -> Unit,
+    onCheckDownload: () -> Unit,
     onRefreshStorageInfo: () -> Unit,
     onCreateTask: () -> Unit,
     onStartTask: (DownloadTaskUi) -> Unit,
@@ -471,6 +484,13 @@ private fun DownloadScreen(
         if (openAddTaskDialogSignal != null) {
             showAddTaskDialog = true
             onAddTaskDialogSignalConsumed()
+        }
+    }
+
+    LaunchedEffect(showAddTaskDialog, state.url, state.fileName) {
+        if (showAddTaskDialog && isSupportedDownloadText(state.url)) {
+            delay(500)
+            onCheckDownload()
         }
     }
 
@@ -538,6 +558,7 @@ private fun DownloadScreen(
             onUrlChange = onUrlChange,
             onFileNameChange = onFileNameChange,
             onReadClipboard = onReadClipboard,
+            onRetryPreflight = onCheckDownload,
             onDismiss = { showAddTaskDialog = false },
             onCreateTask = {
                 onCreateTask()
@@ -596,11 +617,16 @@ private fun AddTaskDialog(
     onUrlChange: (String) -> Unit,
     onFileNameChange: (String) -> Unit,
     onReadClipboard: () -> Unit,
+    onRetryPreflight: () -> Unit,
     onDismiss: () -> Unit,
     onCreateTask: () -> Unit
 ) {
-    val valid = isSupportedDownloadUrl(state.url)
+    val urls = parseDownloadUrls(state.url)
+    val valid = isSupportedDownloadText(state.url)
     val showUrlError = state.url.isNotBlank() && !valid
+    val canCreate = valid && state.preflightStatus == DownloadPreflightStatus.Ready
+    // long: 批量地址通常每条会自动换成两行，按任务数增加可视行数，避免第三条地址被输入框裁掉。
+    val urlInputLines = if (urls.size > 1) (urls.size * 2).coerceIn(6, 8) else 5
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
@@ -617,8 +643,8 @@ private fun AddTaskDialog(
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -656,10 +682,16 @@ private fun AddTaskDialog(
                 OutlinedTextField(
                     value = state.url,
                     onValueChange = onUrlChange,
-                    label = { Text("m3u8 / MP4 地址") },
+                    label = {
+                        Text(
+                            text = if (urls.size > 1) "m3u8 / MP4 地址 (${urls.size})" else "m3u8 / MP4 地址",
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp
+                        )
+                    },
                     singleLine = false,
-                    minLines = 5,
-                    maxLines = 5,
+                    minLines = urlInputLines,
+                    maxLines = urlInputLines,
                     isError = showUrlError,
                     supportingText = if (showUrlError) {
                         { Text("请输入有效的 HTTP(S) m3u8 或 MP4 地址") }
@@ -667,19 +699,31 @@ private fun AddTaskDialog(
                         null
                     },
                     shape = MaterialTheme.shapes.small,
-                    textStyle = MaterialTheme.typography.bodyMedium,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = state.fileName,
                     onValueChange = onFileNameChange,
-                    label = { Text("文件名") },
+                    label = {
+                        Text(
+                            text = if (urls.size > 1) "文件名前缀" else "文件名",
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp
+                        )
+                    },
                     singleLine = false,
                     minLines = 3,
                     maxLines = 3,
                     shape = MaterialTheme.shapes.small,
-                    textStyle = MaterialTheme.typography.bodyMedium,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -688,6 +732,43 @@ private fun AddTaskDialog(
                     total = state.storageTotalLabel,
                     available = state.storageAvailableLabel
                 )
+
+                if (state.preflightStatus != DownloadPreflightStatus.Idle) {
+                    val messageColor = when (state.preflightStatus) {
+                        DownloadPreflightStatus.Failed -> MaterialTheme.colorScheme.error
+                        DownloadPreflightStatus.Ready -> MaterialTheme.colorScheme.primary
+                        DownloadPreflightStatus.Started -> MaterialTheme.colorScheme.primary
+                        DownloadPreflightStatus.Checking -> MaterialTheme.colorScheme.onSurfaceVariant
+                        DownloadPreflightStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Text(
+                        text = state.preflightMessage,
+                        color = messageColor,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                    if (state.preflightExpectedBytes > 0L) {
+                        Text(
+                            text = if (state.preflightTaskCount > 1) {
+                                buildString {
+                                    append("预计合计 ")
+                                    append(formatBytes(state.preflightExpectedBytes))
+                                    append(" · ")
+                                    append(state.preflightTaskCount)
+                                    append(" 个任务")
+                                    if (state.preflightUnknownSizeCount > 0) append(" · 部分大小未知")
+                                }
+                            } else {
+                                "预计文件 ${formatBytes(state.preflightExpectedBytes)} · 保存名 ${state.preflightDisplayName}"
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -702,9 +783,19 @@ private fun AddTaskDialog(
                     ) {
                         Text("取消", fontSize = 13.sp)
                     }
+                    if (state.preflightStatus == DownloadPreflightStatus.Failed) {
+                        TextButton(
+                            onClick = onRetryPreflight,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                        ) {
+                            Text("重新检查", fontSize = 13.sp)
+                        }
+                    }
                     Button(
                         onClick = onCreateTask,
-                        enabled = valid,
+                        enabled = canCreate,
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier.height(40.dp),
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp)
@@ -1186,8 +1277,8 @@ private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
                 CapabilityItem(label = "清晰度", value = "自动选择最高")
                 CapabilityItem(label = "任务方式", value = "队列 + 前台服务")
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                CapabilityItem(label = "支持", value = "普通 / AES-128 TS-HLS")
-                CapabilityItem(label = "暂不支持", value = "SAMPLE-AES、fMP4、BYTERANGE")
+                CapabilityItem(label = "支持", value = "TS / AES-128 / fMP4 / BYTERANGE")
+                CapabilityItem(label = "暂不支持", value = "DRM、SAMPLE-AES、MAP 切换")
                 CapabilityItem(label = "请求头", value = "暂不自定义")
             }
         }
@@ -1966,6 +2057,15 @@ private fun TaskDetailsDialog(
                 SettingRow(label = "平均速度", value = formatAverageSpeed(task.downloadedBytes, task.elapsedMillis))
                 SettingRow(label = "开始时间", value = formatBeijingTime(task.startedAtMillis))
                 SettingRow(label = "完成时间", value = formatBeijingTime(task.finishedAtMillis))
+                task.failureCategory?.let { category ->
+                    SettingRow(label = "错误类型", value = category.displayName)
+                }
+                if (task.retryAttempt > 0) {
+                    SettingRow(label = "自动重试", value = "${task.retryAttempt} 次")
+                }
+                task.lastFailureAtMillis?.let { failedAt ->
+                    SettingRow(label = "失败时间", value = formatBeijingTime(failedAt))
+                }
                 SettingRow(label = "详情", value = task.detail, valueMaxLines = 2)
                 task.outputLabel?.let { output ->
                     SettingRow(label = "输出", value = output, valueMaxLines = 2)
@@ -2050,7 +2150,11 @@ private fun DownloadTaskUi.canPause(): Boolean {
 }
 
 private fun DownloadTaskUi.startActionLabel(): String {
-    return if (state == DownloadTaskState.Paused) "继续" else "开始"
+    return when (state) {
+        DownloadTaskState.Paused -> "继续"
+        DownloadTaskState.Failed -> "重试"
+        else -> "开始"
+    }
 }
 
 @Composable

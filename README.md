@@ -22,7 +22,10 @@
 - 支持 master playlist 自动选择清晰度：优先最高分辨率，其次最高带宽。
 - 支持常见 MPEG-TS HLS 分片下载、MP4 合并，以及 MP4 直链下载。
 - 支持常见 `#EXT-X-KEY:METHOD=AES-128` 的 TS-HLS 加密流。
-- 遇到 DRM、`SAMPLE-AES`、fMP4、BYTERANGE 等暂不支持格式时会提示失败原因。
+- 支持 fMP4 初始化片段（`#EXT-X-MAP`）和 `BYTERANGE` 分片，并输出单个普通 MP4。
+- 创建前检查预计大小、剩余空间和同名文件，空间不足时不会入队，同名文件自动重命名。
+- 支持一次输入最多 20 条链接，或由流光通过 JSON extra 传递批量任务。
+- 下载失败会按网络、访问受限、链接失效、存储、格式、合并和服务器异常分类；可恢复错误最多自动重试 2 次。
 
 ## 技术栈
 
@@ -50,7 +53,7 @@
 
 ### 下载安装
 
-当前稳定版为 `v1.0.9`。从 GitHub Releases 下载最新 APK：
+当前稳定版为 `v1.0.10`。从 GitHub Releases 下载最新 APK：
 
 - [Releases](https://github.com/lonnnnnng/liuguang-downloader/releases)
 
@@ -207,15 +210,18 @@ app/src/main/java/com/liuguang/downloader/
 docs/
 ├── liuguang-app-integration.md             # 流光 App 对接协议
 ├── requirements.md                         # 需求说明
-└── technical-plan.md                       # 技术方案
+├── technical-plan.md                       # 技术方案
+└── roadmap.md                              # 功能路线图与完成状态
 ```
 
 ## 当前限制
 
 - 暂不支持 DRM、Widevine、FairPlay、SAMPLE-AES。
-- 暂不支持 fMP4、BYTERANGE 类型 HLS。
 - 暂不支持为单个任务配置自定义请求头，如 `Referer`、`Cookie`、`User-Agent`。
-- MP4 合并以常见 MPEG-TS HLS 为目标场景。
+- fMP4 目前要求播放列表全程使用同一个初始化片段；不支持下载过程中切换 `EXT-X-MAP`，也不支持 TS 与 fMP4 混合时间线。
+- fMP4 播放列表包含 `EXT-X-DISCONTINUITY` 时会在预检阶段明确拒绝，避免跨 period 时间线被静默拼接。
+- BYTERANGE 服务器必须按标准返回 `206 Partial Content` 和匹配的 `Content-Range`，返回完整资源会直接失败以避免生成损坏文件。
+- MP4 合并依赖设备的 Android `MediaExtractor` / `MediaMuxer`，复杂时间线、轨道或编码参数切换仍可能失败并显示原因。
 
 ## License
 

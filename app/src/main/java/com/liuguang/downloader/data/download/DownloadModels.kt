@@ -9,6 +9,15 @@ data class HlsDownloadArtifact(
     val tempMp4File: File
 )
 
+data class DownloadPreflightResult(
+    val displayName: String,
+    val renamedBecauseConflict: Boolean,
+    val expectedBytes: Long,
+    val requiredBytes: Long,
+    val availableBytes: Long,
+    val storageSufficient: Boolean
+)
+
 sealed interface DownloadProgress {
     data class Preparing(val message: String) : DownloadProgress
     data class VariantSelected(val label: String, val url: String) : DownloadProgress

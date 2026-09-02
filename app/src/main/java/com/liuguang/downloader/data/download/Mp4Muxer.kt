@@ -14,11 +14,54 @@ class Mp4Muxer {
         outputFile: File,
         onSegmentMuxed: (completed: Int, total: Int) -> Unit
     ) {
-        require(segmentFiles.isNotEmpty()) { "没有可合并的分片" }
+        muxMediaSourcesToMp4(
+            mediaFiles = segmentFiles,
+            outputFile = outputFile,
+            onSourceMuxed = onSegmentMuxed
+        )
+    }
+
+    fun muxFmp4SegmentsToMp4(
+        initializationFile: File,
+        segmentFiles: List<File>,
+        outputFile: File,
+        onSegmentMuxed: (completed: Int, total: Int) -> Unit
+    ) {
+        require(initializationFile.exists() && initializationFile.length() > 0L) { "fMP4 初始化片段为空" }
+        require(segmentFiles.isNotEmpty()) { "没有可合并的 fMP4 分片" }
+        val sourceFile = File(outputFile.parentFile, ".${outputFile.name}.fragmented-source.mp4")
+        if (sourceFile.exists()) sourceFile.delete()
+
+        try {
+            sourceFile.outputStream().use { output ->
+                initializationFile.inputStream().use { input -> input.copyTo(output) }
+                segmentFiles.forEachIndexed { index, segmentFile ->
+                    require(segmentFile.exists() && segmentFile.length() > 0L) { "fMP4 分片为空" }
+                    segmentFile.inputStream().use { input -> input.copyTo(output) }
+                    onSegmentMuxed(index + 1, segmentFiles.size)
+                }
+            }
+            // long: init 与 m4s 先还原成完整 fragmented MP4，让平台 Extractor 取得轨道配置，再输出普通 MP4。
+            muxMediaSourcesToMp4(
+                mediaFiles = listOf(sourceFile),
+                outputFile = outputFile,
+                onSourceMuxed = { _, _ -> Unit }
+            )
+        } finally {
+            sourceFile.delete()
+        }
+    }
+
+    private fun muxMediaSourcesToMp4(
+        mediaFiles: List<File>,
+        outputFile: File,
+        onSourceMuxed: (completed: Int, total: Int) -> Unit
+    ) {
+        require(mediaFiles.isNotEmpty()) { "没有可合并的分片" }
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
-        val trackFormats = readTrackFormats(segmentFiles.first())
+        val trackFormats = readTrackFormats(mediaFiles.first())
         require(trackFormats.isNotEmpty()) { "无法从分片中读取音视频轨道" }
 
         val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -32,7 +75,7 @@ class Mp4Muxer {
 
         try {
             muxer.start()
-            segmentFiles.forEachIndexed { index, file ->
+            mediaFiles.forEachIndexed { index, file ->
                 val segmentMaxPts = writeSegment(
                     segmentFile = file,
                     muxer = muxer,
@@ -43,7 +86,7 @@ class Mp4Muxer {
                     timelineOffsetUs = timelineOffsetUs
                 )
                 timelineOffsetUs = max(timelineOffsetUs, segmentMaxPts + MIN_SAMPLE_STEP_US)
-                onSegmentMuxed(index + 1, segmentFiles.size)
+                onSourceMuxed(index + 1, mediaFiles.size)
             }
             muxer.stop()
         } catch (error: Throwable) {

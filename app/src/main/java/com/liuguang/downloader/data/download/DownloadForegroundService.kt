@@ -19,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -53,9 +53,12 @@ class DownloadForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        val interruptedTaskIds = activeJobs.keys + pendingRequests.map { it.taskId }
         expectedStopTaskIds.addAll(activeJobs.keys)
         activeJobs.values.forEach { it.cancel() }
         activeJobs.keys.forEach(engine::cancelTaskRequests)
+        // 前台服务被系统终止时必须立即纠正持久状态，避免 Activity 仍显示一个不会再推进的“下载中”任务。
+        interruptedTaskIds.forEach(DownloadTaskStore::interruptTask)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -102,33 +105,56 @@ class DownloadForegroundService : Service() {
     private fun startQueuedRequest(request: QueuedDownloadRequest) {
         DownloadTaskStore.markTaskRunning(request.taskId)
         val job = serviceScope.launch(start = CoroutineStart.LAZY) {
-            engine.download(
-                taskId = request.taskId,
-                url = request.url,
-                fileNameHint = request.title,
-                customDirectoryUri = request.directoryUri,
-                downloadThreadCount = request.downloadThreadCount
-            ).catch { error ->
-                if (error !is CancellationException && request.taskId !in expectedStopTaskIds) {
-                    DownloadTaskStore.failTask(request.taskId, error.message ?: "下载失败")
-                    updateNotification()
+            try {
+                executeDownloadWithRetry(request)
+            } finally {
+                activeJobs.remove(request.taskId)
+                expectedStopTaskIds.remove(request.taskId)
+                updateNotification()
+                if (!canceling) {
+                    pumpQueue()
                 }
-            }.collect { progress ->
-                DownloadTaskStore.applyProgress(request.taskId, progress)
-                if (progress !is DownloadProgress.SegmentProgress && progress !is DownloadProgress.Muxing) {
-                    updateNotification()
-                }
-            }
-
-            activeJobs.remove(request.taskId)
-            expectedStopTaskIds.remove(request.taskId)
-            updateNotification()
-            if (!canceling) {
-                pumpQueue()
             }
         }
         activeJobs[request.taskId] = job
         job.start()
+    }
+
+    private suspend fun executeDownloadWithRetry(request: QueuedDownloadRequest) {
+        var retryAttempt = 0
+        while (true) {
+            try {
+                engine.download(
+                    taskId = request.taskId,
+                    url = request.url,
+                    fileNameHint = request.title,
+                    customDirectoryUri = request.directoryUri,
+                    downloadThreadCount = request.downloadThreadCount
+                ).collect { progress ->
+                    DownloadTaskStore.applyProgress(request.taskId, progress)
+                    if (progress !is DownloadProgress.SegmentProgress && progress !is DownloadProgress.Muxing) {
+                        updateNotification()
+                    }
+                }
+                return
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (request.taskId in expectedStopTaskIds) return
+                val failure = DownloadFailureClassifier.classify(error)
+                if (!failure.retryable || retryAttempt >= MAX_AUTOMATIC_RETRIES) {
+                    DownloadTaskStore.failTask(request.taskId, failure)
+                    updateNotification()
+                    return
+                }
+                retryAttempt++
+                val delayMillis = RETRY_BASE_DELAY_MILLIS shl (retryAttempt - 1)
+                // 自动重试只覆盖瞬时网络和服务端故障，断点缓存会在下一轮继续复用。
+                DownloadTaskStore.markTaskRetrying(request.taskId, failure, retryAttempt, delayMillis)
+                updateNotification()
+                delay(delayMillis)
+            }
+        }
     }
 
     private fun cancelDownloads() {
@@ -301,6 +327,8 @@ class DownloadForegroundService : Service() {
         private const val REQUEST_CANCEL = 2002
         private const val DEFAULT_MAX_PARALLEL_TASKS = 3
         private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 8
+        private const val MAX_AUTOMATIC_RETRIES = 2
+        private const val RETRY_BASE_DELAY_MILLIS = 2_000L
 
         fun startDownload(
             context: Context,
