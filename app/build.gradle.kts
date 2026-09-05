@@ -20,8 +20,8 @@ android {
         applicationId = "com.liuguang.downloader"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.gradleProperty("VERSION_CODE").orNull?.toIntOrNull() ?: 111
-        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "1.0.11"
+        versionCode = providers.gradleProperty("VERSION_CODE").orNull?.toIntOrNull() ?: 112
+        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "1.0.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
