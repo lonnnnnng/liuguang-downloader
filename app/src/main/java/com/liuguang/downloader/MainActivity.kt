@@ -19,7 +19,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -140,15 +139,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         latestLaunchPayload = intent?.downloadLaunchPayload()
         setContent {
-            val darkTheme = isSystemInDarkTheme()
             SideEffect {
-                // author: long - 系统栏图标必须跟随下载器主题，否则深色头部会让黑色状态图标失去可读性。
+                // author: long - 主题固定浅色后，系统栏图标固定使用深色前景以保证可读性。
                 WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !darkTheme
-                    isAppearanceLightNavigationBars = !darkTheme
+                    isAppearanceLightStatusBars = true
+                    isAppearanceLightNavigationBars = true
                 }
             }
-            LiuguangDownloaderTheme(darkTheme = darkTheme) {
+            LiuguangDownloaderTheme {
                 DownloaderApp(
                     launchPayload = latestLaunchPayload,
                     onLaunchPayloadConsumed = { latestLaunchPayload = null }
