@@ -599,7 +599,6 @@ private fun DownloadEmptyState(
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 15.sp,
             lineHeight = 20.sp,
-            fontWeight = FontWeight.SemiBold
         )
         if (filtered) {
             TextButton(onClick = onShowAll) {
@@ -661,7 +660,6 @@ private fun AddTaskDialog(
                             text = "新建下载任务",
                             fontSize = 18.sp,
                             lineHeight = 22.sp,
-                            fontWeight = FontWeight.Black
                         )
                     }
                     IconButton(
@@ -840,7 +838,6 @@ private fun StorageInfoItem(label: String, value: String, modifier: Modifier = M
             text = value.ifBlank { "-" },
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
             lineHeight = 16.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -912,7 +909,6 @@ private fun DownloadStatusTabs(
                         },
                         fontSize = 10.sp,
                         lineHeight = 12.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 1,
                         textAlign = TextAlign.Center
                     )
@@ -1042,7 +1038,7 @@ private fun SettingsCategory(title: String, content: @Composable () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
             fontSize = 11.sp,
             lineHeight = 15.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
         content()
@@ -1111,7 +1107,6 @@ private fun SettingsItem(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 14.sp,
                 lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = summary,
@@ -1171,7 +1166,6 @@ private fun UpdateSettingsRow(
                         text = "${(state.downloadProgress * 100).toInt()}%",
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
                     )
                     UpdateStatus.Available -> FilledTonalButton(
                         onClick = onDownloadUpdate,
@@ -1257,7 +1251,6 @@ private fun DownloadCapabilitiesDialog(onDismiss: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 18.sp,
                             lineHeight = 22.sp,
-                            fontWeight = FontWeight.Black
                         )
                     }
                     IconButton(
@@ -1303,7 +1296,6 @@ private fun CapabilityItem(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 12.sp,
             lineHeight = 16.sp,
-            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.End,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1371,7 +1363,6 @@ private fun ConfirmActionDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 17.sp,
                         lineHeight = 21.sp,
-                        fontWeight = FontWeight.Black,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1427,7 +1418,7 @@ private fun UpdateAvailableDialog(
         title = { Text("发现新版本 ${release.versionName}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(release.title, fontWeight = FontWeight.SemiBold)
+                Text(release.title)
                 if (release.notes.isNotBlank()) {
                     Text(
                         text = release.notes,
@@ -1528,7 +1519,6 @@ private fun AppBottomBarItem(
                 color = contentColor,
                 fontSize = 10.sp,
                 lineHeight = 12.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1
             )
         }
@@ -1570,7 +1560,6 @@ private fun SettingStepper(
                     text = value.toString(),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     lineHeight = 16.sp,
                     modifier = Modifier.widthIn(min = 28.dp, max = 56.dp)
@@ -1609,7 +1598,6 @@ private fun SettingRow(label: String, value: String, valueMaxLines: Int = 1) {
             text = value,
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 11.5.sp,
-            fontWeight = FontWeight.Medium,
             lineHeight = 16.sp,
             maxLines = valueMaxLines,
             overflow = TextOverflow.Ellipsis,
@@ -1669,7 +1657,6 @@ private fun TaskCard(
                     Text(
                         text = task.title,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         lineHeight = 18.sp,
                         modifier = Modifier.weight(1f),
@@ -1682,7 +1669,6 @@ private fun TaskCard(
                         color = statusColor,
                         fontSize = 10.sp,
                         lineHeight = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.small)
                             .background(statusBackground)
@@ -2018,7 +2004,6 @@ private fun TaskDetailsDialog(
                         text = task.title,
                         fontSize = 18.sp,
                         lineHeight = 22.sp,
-                        fontWeight = FontWeight.Black,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
