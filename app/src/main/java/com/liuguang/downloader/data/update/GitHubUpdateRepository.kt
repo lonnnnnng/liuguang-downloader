@@ -233,7 +233,7 @@ internal object GitHubReleaseParser {
 
         return UpdateRelease(
             versionName = versionName,
-            title = root.optString("name").ifBlank { "流光下载器 $tagName" },
+            title = root.optString("name").ifBlank { "流光下载 $tagName" },
             notes = root.optString("body"),
             assetName = assetName,
             assetUrl = assetUrl,

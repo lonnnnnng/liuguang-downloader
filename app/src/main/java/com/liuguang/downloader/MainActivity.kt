@@ -311,7 +311,7 @@ private fun DownloaderApp(
     if (showExitDialog) {
         ConfirmActionDialog(
             icon = Icons.Default.Info,
-            title = "退出流光下载器？",
+            title = "退出流光下载？",
             message = "正在运行的下载任务会继续在后台执行。",
             confirmLabel = "退出",
             onDismiss = { showExitDialog = false },

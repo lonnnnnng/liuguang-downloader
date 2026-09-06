@@ -61,7 +61,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version_name }}
-          name: 流光下载器 v${{ inputs.version_name }}
+          name: 流光下载 v${{ inputs.version_name }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           files: release-artifacts/liuguang-downloader-v${{ inputs.version_name }}.apk

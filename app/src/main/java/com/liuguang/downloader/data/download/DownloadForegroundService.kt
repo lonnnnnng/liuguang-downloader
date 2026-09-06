@@ -234,9 +234,9 @@ class DownloadForegroundService : Service() {
         val primaryTask = activeTasks.firstOrNull()
         val title = when {
             activeTasks.size == 1 -> primaryTask?.title.orEmpty()
-            activeTasks.size > 1 -> "流光下载器"
-            queuedCount > 0 -> "流光下载器"
-            else -> "流光下载器"
+            activeTasks.size > 1 -> "流光下载"
+            queuedCount > 0 -> "流光下载"
+            else -> "流光下载"
         }
         val status = when {
             activeTasks.size > 1 -> "${activeTasks.size} 个下载中"
@@ -252,7 +252,7 @@ class DownloadForegroundService : Service() {
             else -> "没有运行中的任务"
         }
         return buildNotification(
-            title = title.ifBlank { "流光下载器" },
+            title = title.ifBlank { "流光下载" },
             status = status,
             detail = detail,
             ongoing = activeTasks.isNotEmpty() || queuedCount > 0
@@ -305,7 +305,7 @@ class DownloadForegroundService : Service() {
             "下载进度",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "流光下载器的下载进度"
+            description = "流光下载的下载进度"
         }
         manager.createNotificationChannel(channel)
     }
