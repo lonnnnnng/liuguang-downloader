@@ -1,8 +1,8 @@
 # 流光下载器技术方案
 
-文档状态：main（v1.0.14）
+文档状态：main（v1.0.15）
 
-更新日期：2026-09-07
+更新日期：2026-09-08
 
 ## 技术栈
 
@@ -58,7 +58,7 @@ FFmpeg Kit 已停止维护，因此当前实现不绑定 FFmpeg 二进制或其�
 
 ## 构建与发布
 
-- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.14`、`versionCode 114`。
+- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.15`、`versionCode 115`。
 - 本地正式包使用 `local-signing/liuguang-release.env` 提供的签名环境变量构建。
 - GitHub Actions 工作流只响应 `workflow_dispatch`；普通 push 和 tag 不会自动发版。
 - 发布前至少执行 `testDebugUnitTest`、`lintDebug` 和 `assembleRelease`，并核验 APK 包名、版本号、签名及 GitHub Release 下载回来的 SHA-256。

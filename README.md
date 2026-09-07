@@ -53,7 +53,7 @@
 
 ### 下载安装
 
-当前版本为 `v1.0.14`。从 GitHub Releases 下载最新 APK：
+当前版本为 `v1.0.15`。从 GitHub Releases 下载最新 APK：
 
 - [Releases](https://github.com/lonnnnnng/liuguang-downloader/releases)
 
@@ -186,8 +186,8 @@ on:
 
 普通 push 不会触发发版。手动发版时需要输入：
 
-- `version_name`：下一个语义化版本号，例如 `1.0.15`
-- `version_code`：大于当前 `114` 的 Android `versionCode`
+- `version_name`：下一个语义化版本号，例如 `1.0.16`
+- `version_code`：大于当前 `115` 的 Android `versionCode`
 - `prerelease`：是否标记为预发布
 
 正式签名需要配置以下 GitHub Actions Secrets：

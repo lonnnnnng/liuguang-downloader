@@ -1703,7 +1703,8 @@ private fun TaskCard(
                         CompletedStatsRow(task = task)
                     }
                 }
-                if (task.detail.isNotBlank() &&
+                // long: 已完成任务的保存路径仅保留在详情中，列表不再重复占用一行。
+                if (task.state != DownloadTaskState.Completed && task.detail.isNotBlank() &&
                     (task.state != DownloadTaskState.Running || task.totalSegments <= 0)
                 ) {
                     Text(
