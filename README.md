@@ -14,7 +14,7 @@
 - 支持下载队列、暂停、继续、删除、重新下载、复制下载链接、打开已下载文件。
 - 支持任务历史持久化，App 重启后保留历史下载记录。
 - 支持按状态筛选任务：全部、队列中、下载中、已完成、失败。
-- 支持设置最大并行任务数和分片下载线程数。
+- 支持设置最大并行任务数和分片下载线程数，默认分别为 3 和 16；已保存的自定义设置保持不变。
 - 默认保存到系统 `Downloads/liuguang-download` 目录。
 - 支持在 App 内通过 Android Storage Access Framework 自定义保存目录。
 - 下载页和设置页执行系统返回手势时会先确认是否退出，后台下载不会因此被取消。
@@ -24,7 +24,7 @@
 - 支持常见 `#EXT-X-KEY:METHOD=AES-128` 的 TS-HLS 加密流。
 - 支持 fMP4 初始化片段（`#EXT-X-MAP`）和 `BYTERANGE` 分片，并输出单个普通 MP4。
 - 创建前检查预计大小、剩余空间和同名文件，空间不足时不会入队，同名文件自动重命名。
-- 支持一次输入最多 20 条链接，或由流光通过 JSON extra 传递批量任务。
+- 支持一次输入多条链接，或由流光通过 JSON extra 传递批量任务，不设固定条数上限；单次输入文本仍不超过 65,536 字符。
 - 下载失败会按网络、访问受限、链接失效、存储、格式、合并和服务器异常分类；可恢复错误最多自动重试 2 次。
 
 ## 技术栈
@@ -53,7 +53,7 @@
 
 ### 下载安装
 
-当前稳定版为 `v1.0.10`。从 GitHub Releases 下载最新 APK：
+当前版本为 `v1.0.14`。从 GitHub Releases 下载最新 APK：
 
 - [Releases](https://github.com/lonnnnnng/liuguang-downloader/releases)
 
@@ -186,8 +186,8 @@ on:
 
 普通 push 不会触发发版。手动发版时需要输入：
 
-- `version_name`：下一个语义化版本号，例如 `1.0.10`
-- `version_code`：大于当前 `109` 的 Android `versionCode`
+- `version_name`：下一个语义化版本号，例如 `1.0.15`
+- `version_code`：大于当前 `114` 的 Android `versionCode`
 - `prerelease`：是否标记为预发布
 
 正式签名需要配置以下 GitHub Actions Secrets：

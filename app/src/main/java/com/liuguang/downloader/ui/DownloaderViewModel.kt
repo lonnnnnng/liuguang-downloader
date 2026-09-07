@@ -68,7 +68,7 @@ private data class PreparedDownloadItem(
 private const val DEFAULT_DIRECTORY_LABEL = "liuguang-download"
 private const val LEGACY_CUSTOM_DIRECTORY_LABEL = "自定义目录已选择"
 private const val DEFAULT_MAX_PARALLEL_TASKS = 3
-private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 8
+private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 16
 
 enum class DownloadPreflightStatus {
     Idle,
@@ -161,9 +161,8 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setDownloadDraftItems(items: List<DownloadDraftItem>) {
-        val acceptedItems = items
-            .filter { isSupportedDownloadUrl(it.url) }
-            .take(MAX_BATCH_TASKS)
+        // long: 批量传入的有效任务全部保留，实际同时下载的数量由队列并发设置控制。
+        val acceptedItems = items.filter { isSupportedDownloadUrl(it.url) }
         suppliedDraftItems = acceptedItems
         _uiState.value = _uiState.value.copy(
             url = acceptedItems.joinToString("\n") { it.url },
@@ -459,7 +458,6 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         private const val KEY_CUSTOM_DIRECTORY_LABEL = "custom_directory_label"
         private const val KEY_MAX_PARALLEL_TASKS = "max_parallel_tasks"
         private const val KEY_DOWNLOAD_THREAD_COUNT = "download_thread_count"
-        private const val MAX_BATCH_TASKS = 20
         private const val PREFLIGHT_PARALLELISM = 3
     }
 
@@ -597,7 +595,7 @@ fun parseDownloadUrls(value: String): List<String> {
 fun isSupportedDownloadText(value: String): Boolean {
     if (value.length > 65_536) return false
     val urls = parseDownloadUrls(value)
-    return urls.size in 1..20 && urls.all(::isSupportedDownloadUrl)
+    return urls.isNotEmpty() && urls.all(::isSupportedDownloadUrl)
 }
 
 private fun deriveFileName(url: String, index: Int): String {

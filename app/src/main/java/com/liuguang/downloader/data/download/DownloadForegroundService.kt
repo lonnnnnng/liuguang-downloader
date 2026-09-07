@@ -326,7 +326,7 @@ class DownloadForegroundService : Service() {
         private const val REQUEST_OPEN_APP = 2001
         private const val REQUEST_CANCEL = 2002
         private const val DEFAULT_MAX_PARALLEL_TASKS = 3
-        private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 8
+        private const val DEFAULT_DOWNLOAD_THREAD_COUNT = 16
         private const val MAX_AUTOMATIC_RETRIES = 2
         private const val RETRY_BASE_DELAY_MILLIS = 2_000L
 

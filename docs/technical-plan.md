@@ -1,8 +1,8 @@
 # 流光下载器技术方案
 
-文档状态：main（v1.0.10）
+文档状态：main（v1.0.14）
 
-更新日期：2026-09-02
+更新日期：2026-09-07
 
 ## 技术栈
 
@@ -20,6 +20,7 @@
 
 - 单 Activity Compose 界面，下载页和设置页为一级页面。
 - `DownloaderViewModel` 管理下载草稿、目录设置、并发配置和任务列表状态。
+- 批量文本和 JSON 输入不设固定任务条数上限，仍保留 65,536 字符的文本长度保护；资源预检最多同时处理 3 个，下载队列按用户设置的最大并行任务数调度。
 - `UpdateViewModel` 独立管理检查、下载、待安装和失败状态，避免与视频下载任务队列混用。
 - 通过 `BackHandler` 在一级页面的系统返回/返回手势上显示退出确认；退出 Activity 不取消前台下载服务。
 
@@ -57,7 +58,7 @@ FFmpeg Kit 已停止维护，因此当前实现不绑定 FFmpeg 二进制或其�
 
 ## 构建与发布
 
-- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.10`、`versionCode 110`。
+- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.14`、`versionCode 114`。
 - 本地正式包使用 `local-signing/liuguang-release.env` 提供的签名环境变量构建。
 - GitHub Actions 工作流只响应 `workflow_dispatch`；普通 push 和 tag 不会自动发版。
 - 发布前至少执行 `testDebugUnitTest`、`lintDebug` 和 `assembleRelease`，并核验 APK 包名、版本号、签名及 GitHub Release 下载回来的 SHA-256。
