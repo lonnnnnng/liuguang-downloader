@@ -20,7 +20,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class DownloadForegroundService : Service() {
@@ -29,9 +31,11 @@ class DownloadForegroundService : Service() {
     private val pendingRequests = ArrayDeque<QueuedDownloadRequest>()
     private val activeJobs = mutableMapOf<String, Job>()
     private val expectedStopTaskIds = mutableSetOf<String>()
+    private val deletingTaskIds = mutableSetOf<String>()
     private var maxParallelTasks = DEFAULT_MAX_PARALLEL_TASKS
     private var foregroundStarted = false
     private var canceling = false
+    private var deletionInProgress = false
 
     override fun onCreate() {
         super.onCreate()
@@ -45,7 +49,8 @@ class DownloadForegroundService : Service() {
             ACTION_START -> enqueueDownload(intent, startId)
             ACTION_CANCEL -> cancelDownloads()
             ACTION_PAUSE_TASK -> pauseTask(intent)
-            ACTION_DELETE_TASK -> deleteTask(intent)
+            ACTION_DELETE_TASK -> deleteTasks(intent, allTasks = false)
+            ACTION_DELETE_ALL_TASKS -> deleteTasks(intent, allTasks = true)
         }
         return START_NOT_STICKY
     }
@@ -55,7 +60,7 @@ class DownloadForegroundService : Service() {
     override fun onDestroy() {
         val interruptedTaskIds = activeJobs.keys + pendingRequests.map { it.taskId }
         expectedStopTaskIds.addAll(activeJobs.keys)
-        activeJobs.values.forEach { it.cancel() }
+        activeJobs.values.toList().forEach { it.cancel() }
         activeJobs.keys.forEach(engine::cancelTaskRequests)
         // 前台服务被系统终止时必须立即纠正持久状态，避免 Activity 仍显示一个不会再推进的“下载中”任务。
         interruptedTaskIds.forEach(DownloadTaskStore::interruptTask)
@@ -79,6 +84,7 @@ class DownloadForegroundService : Service() {
         canceling = false
         val taskId = intent.getStringExtra(EXTRA_TASK_ID)?.takeIf { it.isNotBlank() }
             ?: UUID.randomUUID().toString()
+        if (taskId in deletingTaskIds) return
         val title = fileName.ifBlank { "流光下载-$taskId" }
         val request = QueuedDownloadRequest(
             taskId = taskId,
@@ -96,7 +102,10 @@ class DownloadForegroundService : Service() {
 
     private fun pumpQueue() {
         while (activeJobs.size < maxParallelTasks && pendingRequests.isNotEmpty()) {
-            startQueuedRequest(pendingRequests.removeFirst())
+            // long: 暂停后立即继续时，必须等旧任务退出，避免两个 Job 同时写入同一份断点缓存。
+            val request = pendingRequests.firstOrNull { it.taskId !in activeJobs } ?: break
+            pendingRequests.remove(request)
+            startQueuedRequest(request)
         }
         updateNotification()
         stopIfIdle()
@@ -108,12 +117,13 @@ class DownloadForegroundService : Service() {
             try {
                 executeDownloadWithRetry(request)
             } finally {
+                engine.takePublishedOutput(request.taskId)?.let {
+                    DownloadTaskStore.recordPublishedOutput(request.taskId, it)
+                }
                 activeJobs.remove(request.taskId)
                 expectedStopTaskIds.remove(request.taskId)
                 updateNotification()
-                if (!canceling) {
-                    pumpQueue()
-                }
+                if (canceling) stopIfIdle() else pumpQueue()
             }
         }
         activeJobs[request.taskId] = job
@@ -162,19 +172,18 @@ class DownloadForegroundService : Service() {
         pendingRequests.clear()
         expectedStopTaskIds.addAll(activeJobs.keys)
         activeJobs.keys.forEach(engine::cancelTaskRequests)
-        activeJobs.values.forEach { it.cancel() }
-        activeJobs.clear()
+        activeJobs.values.toList().forEach { it.cancel() }
         DownloadTaskStore.cancelActiveAndQueuedTasks()
         updateNotification()
-        stopForeground(STOP_FOREGROUND_DETACH)
-        foregroundStarted = false
-        stopSelf()
+        // long: 通知栏取消也要保留收尾中的 Job，随后删除任务才能等待输出文件停止写入。
+        stopIfIdle()
     }
 
     private fun pauseTask(intent: Intent) {
         val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return
         val removedPending = pendingRequests.removeAll { it.taskId == taskId }
-        val removedActive = activeJobs.remove(taskId)
+        // long: 取消并非立即退出，保留 Job 到收尾完成，紧接着删除时才能等待实际写入结束。
+        val removedActive = activeJobs[taskId]
         expectedStopTaskIds.add(taskId)
         engine.cancelTaskRequests(taskId)
         removedActive?.cancel()
@@ -188,20 +197,58 @@ class DownloadForegroundService : Service() {
         pumpQueue()
     }
 
-    private fun deleteTask(intent: Intent) {
-        val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return
-        pendingRequests.removeAll { it.taskId == taskId }
-        val removedActive = activeJobs.remove(taskId)
-        expectedStopTaskIds.add(taskId)
-        engine.cancelTaskRequests(taskId)
-        removedActive?.cancel()
-        engine.clearTaskCache(taskId)
-        DownloadTaskStore.removeTask(taskId)
-        if (removedActive == null) {
-            expectedStopTaskIds.remove(taskId)
+    private fun deleteTasks(intent: Intent, allTasks: Boolean) {
+        val taskIds = if (allTasks) {
+            DownloadTaskStore.tasks.value.map { it.id }.toSet()
+        } else {
+            setOfNotNull(intent.getStringExtra(EXTRA_TASK_ID))
         }
-        updateNotification()
-        pumpQueue()
+        val deleteFiles = intent.getBooleanExtra(EXTRA_DELETE_FILES, false)
+        deletionInProgress = true
+        deletingTaskIds.addAll(taskIds)
+        pendingRequests.removeAll { it.taskId in taskIds }
+        val jobs = taskIds.mapNotNull(activeJobs::get)
+        expectedStopTaskIds.addAll(taskIds)
+        taskIds.forEach(engine::cancelTaskRequests)
+        jobs.forEach { it.cancel() }
+
+        serviceScope.launch {
+            try {
+                // long: 等待分片写入、合并和文件发布彻底退出后，再删除文件与缓存，避免删除后又被写回。
+                jobs.joinAll()
+                taskIds.forEach { id ->
+                    val task = DownloadTaskStore.task(id)
+                    if (task?.state == DownloadTaskState.Running || task?.state == DownloadTaskState.Queued) {
+                        DownloadTaskStore.pauseTask(id)
+                    }
+                }
+                val tasks = taskIds.mapNotNull(DownloadTaskStore::task)
+                val result = withContext(Dispatchers.IO) {
+                    DownloadTaskDeletion.remove(
+                        tasks = tasks,
+                        deleteFiles = deleteFiles,
+                        deleteOutput = DownloadOutputWriter(applicationContext)::deletePublishedOutput,
+                        clearCache = { id ->
+                            engine.clearTaskCache(id)
+                            check(!engine.workDirectoryForTask(id).exists()) { "任务缓存未能清理，请重试" }
+                        }
+                    )
+                }
+                DownloadTaskStore.removeTasks(result.removedTaskIds)
+                DownloadTaskStore.finishTaskDeletion(result.errorMessage)
+            } catch (error: CancellationException) {
+                DownloadTaskStore.finishTaskDeletion("删除操作已中断，未移除的任务可重新尝试删除。")
+                throw error
+            } catch (error: Exception) {
+                DownloadTaskStore.finishTaskDeletion(error.message ?: "删除失败，请重试")
+            } finally {
+                deletingTaskIds.removeAll(taskIds)
+                expectedStopTaskIds.removeAll(taskIds)
+                deletionInProgress = false
+                updateNotification()
+                if (canceling) stopIfIdle() else pumpQueue()
+            }
+        }
     }
 
     private fun ensureForeground() {
@@ -220,7 +267,7 @@ class DownloadForegroundService : Service() {
     }
 
     private fun stopIfIdle() {
-        if (activeJobs.isNotEmpty() || pendingRequests.isNotEmpty()) return
+        if (activeJobs.isNotEmpty() || pendingRequests.isNotEmpty() || deletionInProgress) return
         if (foregroundStarted) {
             stopForeground(STOP_FOREGROUND_DETACH)
             foregroundStarted = false
@@ -315,6 +362,8 @@ class DownloadForegroundService : Service() {
         private const val ACTION_CANCEL = "com.liuguang.downloader.action.CANCEL_DOWNLOAD"
         private const val ACTION_PAUSE_TASK = "com.liuguang.downloader.action.PAUSE_TASK"
         private const val ACTION_DELETE_TASK = "com.liuguang.downloader.action.DELETE_TASK"
+        private const val ACTION_DELETE_ALL_TASKS = "com.liuguang.downloader.action.DELETE_ALL_TASKS"
+        private const val EXTRA_DELETE_FILES = "extra_delete_files"
         private const val EXTRA_TASK_ID = "extra_task_id"
         private const val EXTRA_URL = "extra_url"
         private const val EXTRA_FILE_NAME = "extra_file_name"
@@ -366,12 +415,26 @@ class DownloadForegroundService : Service() {
             context.startService(intent)
         }
 
-        fun deleteTask(context: Context, taskId: String) {
+        fun deleteTask(context: Context, taskId: String, deleteFiles: Boolean) {
+            requestDeletion(context, taskId, deleteFiles)
+        }
+
+        fun deleteAllTasks(context: Context, deleteFiles: Boolean) {
+            requestDeletion(context, taskId = null, deleteFiles = deleteFiles)
+        }
+
+        private fun requestDeletion(context: Context, taskId: String?, deleteFiles: Boolean) {
+            if (!DownloadTaskStore.beginTaskDeletion()) return
             val intent = Intent(context, DownloadForegroundService::class.java).apply {
-                action = ACTION_DELETE_TASK
-                putExtra(EXTRA_TASK_ID, taskId)
+                action = if (taskId == null) ACTION_DELETE_ALL_TASKS else ACTION_DELETE_TASK
+                taskId?.let { putExtra(EXTRA_TASK_ID, it) }
+                putExtra(EXTRA_DELETE_FILES, deleteFiles)
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (error: Exception) {
+                DownloadTaskStore.finishTaskDeletion(error.message ?: "无法启动删除操作，请重试")
+            }
         }
 
         fun clearTaskCache(context: Context, taskId: String) {

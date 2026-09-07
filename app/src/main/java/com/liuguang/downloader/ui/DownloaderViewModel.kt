@@ -16,6 +16,7 @@ import com.liuguang.downloader.data.download.DownloadFailureCategory
 import com.liuguang.downloader.data.download.DownloadFailureClassifier
 import com.liuguang.downloader.data.download.DownloadPreflightResult
 import com.liuguang.downloader.data.download.DownloadTaskSnapshot
+import com.liuguang.downloader.data.download.DownloadTaskDeletionState
 import com.liuguang.downloader.data.download.DownloadTaskState
 import com.liuguang.downloader.data.download.DownloadTaskStore
 import com.liuguang.downloader.data.download.M3u8DownloadEngine
@@ -98,7 +99,8 @@ data class DownloaderUiState(
     val preflightTaskCount: Int = 0,
     val preflightUnknownSizeCount: Int = 0,
     val downloadStartedEvent: Long? = null,
-    val tasks: List<DownloadTaskUi> = emptyList()
+    val tasks: List<DownloadTaskUi> = emptyList(),
+    val taskDeletion: DownloadTaskDeletionState = DownloadTaskDeletionState()
 )
 
 class DownloaderViewModel(application: Application) : AndroidViewModel(application) {
@@ -142,6 +144,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.update { state ->
                     state.copy(tasks = tasks.map(DownloadTaskSnapshot::toUi))
                 }
+            }
+        }
+        viewModelScope.launch {
+            DownloadTaskStore.deletionState.collect { deletion ->
+                _uiState.update { it.copy(taskDeletion = deletion) }
             }
         }
     }
@@ -401,6 +408,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun startTask(task: DownloadTaskUi) {
+        if (DownloadTaskStore.deletionState.value.isDeleting) return
         if (task.state == DownloadTaskState.Running || task.state == DownloadTaskState.Queued) return
         startDownloadForTask(task = task, reuseTaskId = true)
     }
@@ -411,16 +419,21 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun restartTask(task: DownloadTaskUi) {
+        if (DownloadTaskStore.deletionState.value.isDeleting) return
         DownloadForegroundService.clearTaskCache(getApplication(), task.id)
         startDownloadForTask(task = task, reuseTaskId = false)
     }
 
-    fun deleteTask(task: DownloadTaskUi) {
-        if (task.state == DownloadTaskState.Running || task.state == DownloadTaskState.Queued) {
-            DownloadForegroundService.deleteTask(getApplication(), task.id)
-        } else {
-            DownloadTaskStore.removeTask(task.id)
-        }
+    fun deleteTask(task: DownloadTaskUi, deleteFiles: Boolean) {
+        DownloadForegroundService.deleteTask(getApplication(), task.id, deleteFiles)
+    }
+
+    fun deleteAllTasks(deleteFiles: Boolean) {
+        DownloadForegroundService.deleteAllTasks(getApplication(), deleteFiles)
+    }
+
+    fun dismissTaskDeletionError() {
+        DownloadTaskStore.dismissTaskDeletionError()
     }
 
     fun copyTaskUrl(task: DownloadTaskUi) {

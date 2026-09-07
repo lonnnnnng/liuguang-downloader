@@ -52,6 +52,9 @@ class M3u8DownloadEngine(
     private val outputWriter: DownloadOutputWriter = DownloadOutputWriter(context)
 ) {
     private val activeCallsByTask = ConcurrentHashMap<String, MutableSet<Call>>()
+    private val publishedOutputsByTask = ConcurrentHashMap<String, PublishedOutput>()
+
+    fun takePublishedOutput(taskId: String): PublishedOutput? = publishedOutputsByTask.remove(taskId)
 
     fun workDirectoryForTask(taskId: String): File {
         return File(context.cacheDir, "hls-downloads/$taskId")
@@ -372,6 +375,8 @@ class M3u8DownloadEngine(
 
             send(DownloadProgress.Publishing("正在保存到目标目录"))
             val output = outputWriter.publishMp4(tempMp4, displayName, customDirectoryUri)
+            // long: 取消可能发生在文件落盘与完成事件送达之间，服务收尾时仍需取回准确的文件地址。
+            publishedOutputsByTask[taskId] = output
             send(
                 DownloadProgress.Completed(
                     outputLabel = output.label,
@@ -469,6 +474,7 @@ class M3u8DownloadEngine(
 
         send(DownloadProgress.Publishing("正在保存到目标目录"))
         val output = outputWriter.publishMp4(tempMp4, displayName, customDirectoryUri)
+        publishedOutputsByTask[taskId] = output
         send(
             DownloadProgress.Completed(
                 outputLabel = output.label,

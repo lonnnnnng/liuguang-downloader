@@ -12,6 +12,8 @@ import org.json.JSONObject
 object DownloadTaskStore {
     private val _tasks = MutableStateFlow<List<DownloadTaskSnapshot>>(emptyList())
     val tasks: StateFlow<List<DownloadTaskSnapshot>> = _tasks.asStateFlow()
+    private val _deletionState = MutableStateFlow(DownloadTaskDeletionState())
+    val deletionState: StateFlow<DownloadTaskDeletionState> = _deletionState.asStateFlow()
     private var preferences: SharedPreferences? = null
     private var initialized = false
 
@@ -129,8 +131,26 @@ object DownloadTaskStore {
         }
     }
 
-    fun removeTask(id: String) {
-        updateTasks { current -> current.filterNot { it.id == id } }
+    fun removeTasks(ids: Set<String>) {
+        updateTasks { current -> current.filterNot { it.id in ids } }
+    }
+
+    fun recordPublishedOutput(id: String, output: PublishedOutput) {
+        updateTask(id) { it.copy(outputUri = output.uri, outputLabel = output.label) }
+    }
+
+    fun beginTaskDeletion(): Boolean {
+        val current = _deletionState.value
+        return !current.isDeleting &&
+            _deletionState.compareAndSet(current, DownloadTaskDeletionState(isDeleting = true))
+    }
+
+    fun finishTaskDeletion(errorMessage: String? = null) {
+        _deletionState.value = DownloadTaskDeletionState(errorMessage = errorMessage)
+    }
+
+    fun dismissTaskDeletionError() {
+        _deletionState.update { it.copy(errorMessage = null) }
     }
 
     fun cancelActiveAndQueuedTasks() {

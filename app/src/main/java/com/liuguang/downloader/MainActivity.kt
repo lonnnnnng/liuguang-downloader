@@ -19,6 +19,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -72,6 +73,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -303,7 +305,8 @@ private fun DownloaderApp(
                             updateViewModel.checkForUpdates()
                         },
                         onDownloadUpdate = updateViewModel::downloadUpdate,
-                        onInstallUpdate = ::installUpdate
+                        onInstallUpdate = ::installUpdate,
+                        onClearTasks = viewModel::deleteAllTasks
                     )
                 }
             }
@@ -313,6 +316,20 @@ private fun DownloaderApp(
                 onSelectScreen = { selectedScreen = it }
             )
         }
+    }
+
+    val deletionError = state.taskDeletion.errorMessage
+    if (deletionError != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissTaskDeletionError,
+            title = { Text("删除未完成") },
+            text = { Text(deletionError) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissTaskDeletionError) {
+                    Text("知道了")
+                }
+            }
+        )
     }
 
     if (showExitDialog) {
@@ -469,7 +486,7 @@ private fun DownloadScreen(
     onPauseTask: (DownloadTaskUi) -> Unit,
     onCopyTaskUrl: (DownloadTaskUi) -> Unit,
     onOpenTask: (DownloadTaskUi) -> Unit,
-    onDeleteTask: (DownloadTaskUi) -> Unit,
+    onDeleteTask: (DownloadTaskUi, Boolean) -> Unit,
     onRestartTask: (DownloadTaskUi) -> Unit
 ) {
     var selectedFilter by rememberSaveable { mutableStateOf(TaskFilter.All) }
@@ -526,6 +543,7 @@ private fun DownloadScreen(
                     items(filteredTasks, key = { it.id }) { task ->
                         TaskCard(
                             task = task,
+                            isDeleting = state.taskDeletion.isDeleting,
                             onStartTask = onStartTask,
                             onPauseTask = onPauseTask,
                             onCopyTaskUrl = onCopyTaskUrl,
@@ -1000,8 +1018,10 @@ private fun SettingsScreen(
     onDownloadThreadChange: (Int) -> Unit,
     onCheckUpdate: () -> Unit,
     onDownloadUpdate: () -> Unit,
-    onInstallUpdate: () -> Unit
+    onInstallUpdate: () -> Unit,
+    onClearTasks: (Boolean) -> Unit
 ) {
+    var showClearConfirmation by remember { mutableStateOf(false) }
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 18.dp),
@@ -1036,6 +1056,22 @@ private fun SettingsScreen(
                             trailing = { SettingsChevron() }
                         )
                     }
+                    SettingsDivider()
+                    SettingsItem(
+                        icon = Icons.Default.Delete,
+                        title = "清空所有下载任务",
+                        summary = when {
+                            state.taskDeletion.isDeleting -> "正在删除任务..."
+                            state.tasks.isEmpty() -> "暂无下载任务"
+                            else -> "${state.tasks.size} 个任务"
+                        },
+                        onClick = if (state.tasks.isNotEmpty() && !state.taskDeletion.isDeleting) {
+                            { showClearConfirmation = true }
+                        } else {
+                            null
+                        },
+                        trailing = { SettingsChevron() }
+                    )
                 }
             }
         }
@@ -1076,6 +1112,18 @@ private fun SettingsScreen(
                 }
             }
         }
+    }
+    if (showClearConfirmation) {
+        DeleteTasksDialog(
+            title = "清空所有下载任务？",
+            message = "将清空 ${state.tasks.size} 个任务，正在下载的任务会停止。",
+            confirmLabel = "清空",
+            onDismiss = { showClearConfirmation = false },
+            onConfirm = { deleteFiles ->
+                showClearConfirmation = false
+                onClearTasks(deleteFiles)
+            }
+        )
     }
 }
 
@@ -1272,6 +1320,7 @@ private fun ConfirmActionDialog(
     message: String,
     confirmLabel: String,
     destructive: Boolean = false,
+    content: (@Composable () -> Unit)? = null,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -1333,6 +1382,7 @@ private fun ConfirmActionDialog(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
+                content?.invoke()
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
@@ -1362,6 +1412,48 @@ private fun ConfirmActionDialog(
             }
         }
     }
+}
+
+@Composable
+private fun DeleteTasksDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: (Boolean) -> Unit
+) {
+    // long: 每次删除都默认保留成品文件，只有本次明确勾选才会删除任务对应的文件。
+    var deleteFiles by rememberSaveable { mutableStateOf(false) }
+    ConfirmActionDialog(
+        icon = Icons.Default.Delete,
+        title = title,
+        message = message,
+        confirmLabel = confirmLabel,
+        destructive = true,
+        content = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .toggleable(
+                        value = deleteFiles,
+                        role = Role.Checkbox,
+                        onValueChange = { deleteFiles = it }
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = deleteFiles, onCheckedChange = null)
+                Text(
+                    text = "同时删除下载文件",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(start = 8.dp).weight(1f)
+                )
+            }
+        },
+        onDismiss = onDismiss,
+        onConfirm = { onConfirm(deleteFiles) }
+    )
 }
 
 @Composable
@@ -1572,11 +1664,12 @@ private fun SettingRow(label: String, value: String, valueMaxLines: Int = 1) {
 @Composable
 private fun TaskCard(
     task: DownloadTaskUi,
+    isDeleting: Boolean,
     onStartTask: (DownloadTaskUi) -> Unit,
     onPauseTask: (DownloadTaskUi) -> Unit,
     onCopyTaskUrl: (DownloadTaskUi) -> Unit,
     onOpenTask: (DownloadTaskUi) -> Unit,
-    onDeleteTask: (DownloadTaskUi) -> Unit,
+    onDeleteTask: (DownloadTaskUi, Boolean) -> Unit,
     onRestartTask: (DownloadTaskUi) -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -1603,6 +1696,7 @@ private fun TaskCard(
     Box {
         SurfaceCard(
             modifier = Modifier.combinedClickable(
+                enabled = !isDeleting,
                 onClick = { showDetails = true },
                 onLongClick = { menuExpanded = true }
             ),
@@ -1652,6 +1746,7 @@ private fun TaskCard(
                     Box {
                         IconButton(
                             onClick = { menuExpanded = true },
+                            enabled = !isDeleting,
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
@@ -1736,16 +1831,14 @@ private fun TaskCard(
     }
 
     if (showDeleteConfirmation) {
-        ConfirmActionDialog(
-            icon = Icons.Default.Delete,
+        DeleteTasksDialog(
             title = "删除下载任务？",
             message = task.title,
             confirmLabel = "删除",
-            destructive = true,
             onDismiss = { showDeleteConfirmation = false },
-            onConfirm = {
+            onConfirm = { deleteFiles ->
                 showDeleteConfirmation = false
-                onDeleteTask(task)
+                onDeleteTask(task, deleteFiles)
             }
         )
     }

@@ -1,6 +1,6 @@
 # 流光下载器技术方案
 
-文档状态：main（v1.0.15）
+文档状态：main（v1.0.16）
 
 更新日期：2026-09-08
 
@@ -36,10 +36,13 @@
 - `DownloadForegroundService` 维护队列、最大并行任务数、暂停、恢复、删除和前台服务生命周期。
 - `M3u8DownloadEngine` 用 OkHttp 下载 playlist、初始化片段、媒体分片和 AES-128 密钥；通过协程信号量限制 HLS 分片并发数。
 - BYTERANGE 请求携带精确 `Range`，并校验 `206`、`Content-Range`、响应长度和最终写入长度；未加密 Range 缓存恢复时也会复核文件长度。
-- HLS 工作目录位于 `cacheDir/hls-downloads/<taskId>`。已下载分片可用于暂停后的继续下载；重新下载和删除运行中/等待中任务会清理对应缓存。
+- HLS 工作目录位于 `cacheDir/hls-downloads/<taskId>`。已下载分片可用于暂停后的继续下载；重新下载和删除任务会清理对应缓存。
 - `Mp4Muxer` 是当前具体实现，不存在独立 `data:muxer` 模块或接口。TS 路径逐分片读取音视频轨道并重建时间线；fMP4 路径先拼接 init 与 m4s，还原完整 fragmented MP4，再通过 `MediaExtractor` / `MediaMuxer` 输出普通 MP4。
 - `DownloadOutputWriter` 使用 Android 10+ MediaStore 发布到 `Downloads/liuguang-download`，使用 `DocumentFile` 写入自定义目录；Android 9 及以下使用旧版公共 Downloads 路径。
 - `DownloadTaskStore` 使用 SharedPreferences 中的 JSON 保存任务快照，并通过 `StateFlow` 向 UI 发布状态。
+- 单项删除与清空共用 `DownloadTaskDeletion`；服务先撤出等待队列、取消并等待运行任务退出，再在 IO 线程删除文件与缓存。只有处理成功的任务才移除记录，失败项保留并反馈原因。
+- 已输出文件仅通过快照中的 `outputUri` 定位；默认保留文件，勾选后使用 MediaStore、SAF 或受限的旧版 Downloads 文件路径删除，拒绝删除集合或目录。
+- 引擎暂存已发布文件地址，任务收尾时补入快照，避免取消发生在文件落盘与完成事件之间时遗漏输出文件。
 
 ## MP4 合并边界
 
@@ -58,7 +61,7 @@ FFmpeg Kit 已停止维护，因此当前实现不绑定 FFmpeg 二进制或其�
 
 ## 构建与发布
 
-- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.15`、`versionCode 115`。
+- 默认版本由 `app/build.gradle.kts` 控制，当前为 `versionName 1.0.16`、`versionCode 116`。
 - 本地正式包使用 `local-signing/liuguang-release.env` 提供的签名环境变量构建。
 - GitHub Actions 工作流只响应 `workflow_dispatch`；普通 push 和 tag 不会自动发版。
 - 发布前至少执行 `testDebugUnitTest`、`lintDebug` 和 `assembleRelease`，并核验 APK 包名、版本号、签名及 GitHub Release 下载回来的 SHA-256。

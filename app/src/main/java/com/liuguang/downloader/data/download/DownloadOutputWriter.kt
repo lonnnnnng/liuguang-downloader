@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import androidx.annotation.RequiresApi
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.FileNotFoundException
 
 class DownloadOutputWriter(
     private val context: Context
@@ -82,6 +83,57 @@ class DownloadOutputWriter(
                 }
                 publishToLegacyDownloads(tempFile, outputFile)
             }
+        }
+    }
+
+    fun deletePublishedOutput(uriValue: String) {
+        val uri = Uri.parse(uriValue)
+        when (uri.scheme) {
+            "file" -> {
+                check(uri.authority.isNullOrEmpty()) { "下载文件地址无效" }
+                val path = uri.path ?: error("下载文件地址无效")
+                val directory = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "liuguang-download"
+                )
+                LegacyDownloadOutputDeletion.delete(File(path), directory)
+            }
+            "content" -> deleteContentOutput(uri)
+            else -> error("不支持删除此下载文件地址")
+        }
+    }
+
+    private fun deleteContentOutput(uri: Uri) {
+        val resolver = context.contentResolver
+        val document = DocumentsContract.isDocumentUri(context, uri)
+        // long: 只接受任务保存的单个文件地址，不允许把集合或目录 URI 交给删除接口。
+        check(document || (uri.authority == MediaStore.AUTHORITY && uri.lastPathSegment?.toLongOrNull() != null)) {
+            "下载文件地址无效，无法安全删除"
+        }
+        try {
+            val projection = if (document) {
+                arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            } else {
+                arrayOf(MediaStore.MediaColumns._ID)
+            }
+            val exists = resolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use false
+                if (document) {
+                    check(cursor.getString(0) != DocumentsContract.Document.MIME_TYPE_DIR) {
+                        "只允许删除下载文件，不能删除目录"
+                    }
+                }
+                true
+            } ?: error("无法读取下载文件，任务已保留")
+            if (!exists) return
+            val deleted = if (document) {
+                DocumentsContract.deleteDocument(resolver, uri)
+            } else {
+                resolver.delete(uri, null, null) > 0
+            }
+            check(deleted) { "下载文件删除失败，请检查保存目录权限" }
+        } catch (_: FileNotFoundException) {
+            // long: 文件已被用户或其他应用移走时，可直接移除失效的下载记录。
         }
     }
 
@@ -226,6 +278,17 @@ internal object LegacyDownloadOutputReservation {
             index++
         }
         error("无法生成唯一的下载文件名")
+    }
+}
+
+internal object LegacyDownloadOutputDeletion {
+    fun delete(file: File, directory: File) {
+        val target = file.absoluteFile
+        check(target.canonicalFile.parentFile == directory.canonicalFile) { "下载文件不在原保存目录，无法安全删除" }
+        if (!target.exists()) return
+        check(target.isFile) { "只允许删除下载文件，不能删除目录" }
+        // long: 校验真实路径后仍删除原路径，避免文件被替换为符号链接时误删链接指向的其他视频。
+        check(target.delete()) { "下载文件删除失败，请检查保存目录权限" }
     }
 }
 
